@@ -1,0 +1,66 @@
+# 環境変数（機密情報）
+.env
+.env.local
+.env.*.local
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+.venv/
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Node.js / Next.js
+node_modules/
+.next/
+out/
+.turbo/
+
+# SQLite DBファイル（データはローカルのみ）
+db/sqlite/*.db
+db/sqlite/*.db-shm
+db/sqlite/*.db-wal
+
+# LlamaIndex / ベクトルインデクス
+storage/
+vector_store/
+*.index
+
+# Ollamaモデルファイル（サイズが大きすぎる）
+models/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ログ
+logs/
+*.log
+
+# 一時ファイル
+tmp/
+temp/
+*.tmp
+
+# テスト出力
+tests/output/
+coverage/
+htmlcov/
+
+# 生成された文書（テスト用出力）
+tests/e2e/output/

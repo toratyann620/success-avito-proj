@@ -1,0 +1,369 @@
+@import "tailwindcss";
+
+/* ===== Gemini-like Design System ===== */
+:root {
+  --bg-base: #131314;
+  --bg-sidebar: #1e1f20;
+  --bg-sidebar-hover: #2a2b2d;
+  --bg-input: #1e1f20;
+  --bg-input-hover: #282829;
+  --bg-user-msg: #2b2c2f;
+  --bg-chip: #2b2c2f;
+  --bg-chip-hover: #3a3b3e;
+  --border-subtle: rgba(255,255,255,0.1);
+  --border-input: rgba(255,255,255,0.12);
+  --text-primary: #e3e3e3;
+  --text-secondary: #ababab;
+  --text-tertiary: #6e6e6e;
+  --accent-blue: #8ab4f8;
+  --accent-purple: #b39dff;
+  --accent-teal: #78d9ec;
+  --gem-1: #4285f4;
+  --gem-2: #9b59b6;
+  --gem-3: #ea4335;
+  --gem-4: #34a853;
+  /* Claude生成ダッシュボード用変数 */
+  --color-text-primary: #e3e3e3;
+  --color-text-secondary: #ababab;
+  --color-text-tertiary: #6e6e6e;
+  --color-background-primary: #131314;
+  --color-background-secondary: #1e1f20;
+  --color-border-tertiary: rgba(255,255,255,0.08);
+  --color-border-secondary: rgba(255,255,255,0.12);
+  --border-radius-md: 10px;
+  --font-sans: 'Google Sans', 'Helvetica Neue', Arial, sans-serif;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+  height: 100%;
+  background: var(--bg-base);
+  color: var(--text-primary);
+  font-family: 'Inter', 'Google Sans', 'Helvetica Neue', Arial, sans-serif;
+  font-size: 14px;
+  overflow: hidden;
+}
+
+/* スクロールバー */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 8px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.2); }
+
+/* ===== Gemini ロゴアイコン ===== */
+@keyframes gem-spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+@keyframes gem-pulse {
+  0%, 100% { opacity: 0.8; }
+  50% { opacity: 1; }
+}
+
+/* グラデーションシマー（生成中） */
+@keyframes shimmer-slide {
+  0% { background-position: -200% center; }
+  100% { background-position: 200% center; }
+}
+
+/* タイピングドット */
+@keyframes typing-bounce {
+  0%, 80%, 100% { transform: translateY(0); opacity: 0.4; }
+  40% { transform: translateY(-6px); opacity: 1; }
+}
+
+/* 波形アニメーション */
+@keyframes waveform {
+  0%, 100% { height: 4px; }
+  50% { height: 100%; }
+}
+
+/* グリッティングのフェードイン */
+@keyframes greeting-fade {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ===== Gemini ロゴアイコン CSS ===== */
+.gemini-icon {
+  width: 28px;
+  height: 28px;
+  position: relative;
+  flex-shrink: 0;
+}
+
+.gemini-icon svg {
+  width: 100%;
+  height: 100%;
+}
+
+/* 生成中グラデーションライン */
+.generating-shimmer {
+  height: 2px;
+  width: 120px;
+  background: linear-gradient(90deg,
+    transparent 0%,
+    #4285f4 25%,
+    #9b59b6 50%,
+    #ea4335 75%,
+    transparent 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer-slide 1.5s linear infinite;
+  border-radius: 2px;
+}
+
+/* タイピングドット */
+.dot-typing {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  animation: typing-bounce 1.4s ease-in-out infinite;
+}
+.dot-typing:nth-child(1) { background: #4285f4; animation-delay: 0s; }
+.dot-typing:nth-child(2) { background: #9b59b6; animation-delay: 0.2s; }
+.dot-typing:nth-child(3) { background: #ea4335; animation-delay: 0.4s; }
+
+/* 波形バー */
+.wave-bar {
+  width: 2px;
+  border-radius: 2px;
+  background: linear-gradient(to top, #4285f4, #9b59b6);
+  animation: waveform 0.6s ease-in-out infinite;
+  transform-origin: bottom;
+}
+.wave-bar:nth-child(1) { animation-delay: 0s; min-height: 4px; }
+.wave-bar:nth-child(2) { animation-delay: 0.1s; min-height: 4px; }
+.wave-bar:nth-child(3) { animation-delay: 0.2s; min-height: 4px; }
+.wave-bar:nth-child(4) { animation-delay: 0.1s; min-height: 4px; }
+.wave-bar:nth-child(5) { animation-delay: 0.05s; min-height: 4px; }
+
+/* サイドバーアイテムのホバー */
+.sidebar-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: 100px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+  color: var(--text-primary);
+  font-size: 14px;
+}
+.sidebar-item:hover { background: var(--bg-sidebar-hover); }
+.sidebar-item.active { background: #394457; color: #c2d8ff; }
+
+/* 新規チャットボタン */
+.new-chat-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 16px 0 12px;
+  height: 40px;
+  border-radius: 100px;
+  border: 1px solid var(--border-subtle);
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-primary);
+  background: transparent;
+  transition: background 0.15s ease;
+  white-space: nowrap;
+}
+.new-chat-btn:hover { background: var(--bg-sidebar-hover); }
+
+/* チップ（サジェスト） */
+.suggestion-chip {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 16px;
+  border-radius: 16px;
+  background: var(--bg-chip);
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+  text-align: left;
+  min-height: 80px;
+}
+.suggestion-chip:hover {
+  background: var(--bg-chip-hover);
+  border-color: var(--border-subtle);
+}
+
+/* 入力フィールド */
+.input-wrapper {
+  background: var(--bg-input);
+  border-radius: 28px;
+  border: 1px solid var(--border-input);
+  transition: border-color 0.2s ease, background 0.2s ease;
+}
+.input-wrapper:focus-within {
+  background: var(--bg-input-hover);
+  border-color: rgba(255,255,255,0.2);
+}
+
+/* ユーザーメッセージ */
+.user-message {
+  background: var(--bg-user-msg);
+  border-radius: 20px;
+  padding: 12px 20px;
+  max-width: 75%;
+  margin-left: auto;
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--text-primary);
+}
+
+/* AI応答テキスト */
+.ai-message-text {
+  font-size: 15px;
+  line-height: 1.7;
+  color: var(--text-primary);
+}
+
+/* Markdownのstrong */
+.ai-message-text strong {
+  color: #e3e3e3;
+  font-weight: 600;
+}
+
+/* モデルセレクタ（ヘッダー） */
+.model-selector {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 100px;
+  cursor: pointer;
+  transition: background 0.15s;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-primary);
+  border: none;
+  background: transparent;
+}
+.model-selector:hover { background: var(--bg-sidebar-hover); }
+
+/* 権限バッジ */
+.badge-admin {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 100px;
+  background: linear-gradient(135deg, #f59e0b, #ef4444);
+  color: white;
+  letter-spacing: 0.5px;
+}
+.badge-user {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 100px;
+  background: linear-gradient(135deg, #10b981, #3b82f6);
+  color: white;
+  letter-spacing: 0.5px;
+}
+
+/* テーブル */
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 12px;
+  font-size: 14px;
+}
+.data-table th {
+  text-align: left;
+  padding: 10px 14px;
+  background: rgba(255,255,255,0.06);
+  color: var(--text-secondary);
+  font-weight: 500;
+  font-size: 12px;
+  letter-spacing: 0.3px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.data-table td {
+  padding: 10px 14px;
+  border-bottom: 1px solid rgba(255,255,255,0.04);
+  color: var(--text-primary);
+}
+.data-table tr:last-child td { border-bottom: none; }
+.data-table tr:hover td { background: rgba(255,255,255,0.03); }
+
+/* ファイルカード */
+.file-card {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border-radius: 14px;
+  margin-top: 12px;
+  cursor: pointer;
+  transition: opacity 0.2s ease;
+}
+.file-card:hover { opacity: 0.85; }
+
+/* アクセス制限カード */
+.restricted-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 16px;
+  border-radius: 14px;
+  margin-top: 12px;
+  background: rgba(234, 67, 53, 0.08);
+  border: 1px solid rgba(234, 67, 53, 0.2);
+}
+
+/* トグルスイッチ */
+.toggle-track {
+  width: 48px;
+  height: 26px;
+  border-radius: 100px;
+  position: relative;
+  cursor: pointer;
+  transition: background 0.25s ease;
+  flex-shrink: 0;
+}
+.toggle-thumb {
+  position: absolute;
+  top: 3px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: white;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.3);
+  transition: left 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* スクロール可能チャットエリア */
+.chat-scroll {
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+}
+
+/* フェードイン */
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.fade-up { animation: fade-up 0.3s ease forwards; }
+
+/* ソース引用チップ */
+.source-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 100px;
+  font-size: 11px;
+  background: rgba(138, 180, 248, 0.12);
+  color: #8ab4f8;
+  border: 1px solid rgba(138, 180, 248, 0.2);
+  cursor: pointer;
+}

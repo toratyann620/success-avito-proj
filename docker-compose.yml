@@ -43,7 +43,7 @@ services:
     #           count: all
     #           capabilities: [gpu]
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+      test: ["CMD", "ollama", "list"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -64,9 +64,9 @@ services:
       - OLLAMA_HOST=http://ollama:11434
     entrypoint: >
       sh -c "
-        echo '🤖 Gemma3:12b モデルをPull中... (数GB、初回のみ時間がかかります)';
-        ollama pull gemma3:12b;
-        echo '✅ Gemma3:12b Pull完了';
+        echo '🤖 qwen2.5-coder:1.5b モデルをPull中... (数GB、初回のみ時間がかかります)';
+        ollama pull qwen2.5-coder:1.5b;
+        echo '✅ qwen2.5-coder:1.5b Pull完了';
       "
     restart: no
 
@@ -74,10 +74,10 @@ services:
   # Open Notebook - RAGエンジン・UI
   # ============================================
   open-notebook:
-    image: lfnovo/open-notebook:latest
+    image: lfnovo/open_notebook:latest
     container_name: ai-knowledge-open-notebook
     ports:
-      - "5000:5000"
+      - "5001:5000"
     volumes:
       - open_notebook_data:/app/data
       - ./watch:/watch:ro  # 監視対象フォルダ（読み取り専用でマウント）
@@ -104,13 +104,15 @@ services:
       - ./app/api:/app
       - ./templates:/templates:ro
       - ./watch:/watch:ro
+      - ./step2:/app/step2
+      - ./tests:/app/tests
       - sqlite_data:/data/sqlite
       - vector_store_data:/data/vector_store
     networks:
       - ai-knowledge-net
     environment:
       - OLLAMA_BASE_URL=http://ollama:11434
-      - OLLAMA_MODEL=${OLLAMA_MODEL:-gemma3:12b}
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-qwen2.5-coder:1.5b}
       - SQLITE_DB_PATH=/data/sqlite/knowledge.db
       - VECTOR_STORE_PATH=/data/vector_store
       - BRAVE_SEARCH_API_KEY=${BRAVE_SEARCH_API_KEY:-}
@@ -133,7 +135,7 @@ services:
       dockerfile: Dockerfile
     container_name: ai-knowledge-frontend
     ports:
-      - "3000:3000"
+      - "3002:3000"
     networks:
       - ai-knowledge-net
     environment:
@@ -162,6 +164,7 @@ services:
       - WATCH_FOLDERS=/watch
       - SQLITE_DB_PATH=/data/sqlite/knowledge.db
       - API_URL=http://api:8000
+      - POLL_INTERVAL_SECONDS=${POLL_INTERVAL_SECONDS:-300}
     depends_on:
       - api
     restart: unless-stopped

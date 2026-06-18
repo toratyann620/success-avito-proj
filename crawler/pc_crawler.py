@@ -12,6 +12,7 @@ from pathlib import Path
 from datetime import datetime
 
 import httpx
+import threading
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 from loguru import logger
@@ -25,6 +26,7 @@ load_dotenv()
 WATCH_FOLDERS = os.getenv("WATCH_FOLDERS", "/watch").split(",")
 SQLITE_DB_PATH = os.getenv("SQLITE_DB_PATH", "/data/sqlite/knowledge.db")
 API_URL = os.getenv("API_URL", "http://api:8000")
+POLL_INTERVAL_SECONDS = int(os.getenv("POLL_INTERVAL_SECONDS", "300"))
 
 SUPPORTED_EXTENSIONS = {".pdf", ".docx", ".xlsx", ".pptx", ".txt", ".md"}
 
@@ -207,9 +209,11 @@ class DocumentEventHandler(FileSystemEventHandler):
 # ============================================
 
 def initial_scan():
-    """起動時に監視フォルダ内の既存ファイルをすべてスキャンする"""
-    logger.info("🔍 初期スキャン開始...")
+    """起動時および定期実行時に監視フォルダ内の既存ファイルをすべてスキャンする"""
+    logger.info("🔍 スキャン開始（差分検知）...")
     count = 0
+    
+    # 1. 既存ファイルをインデクシング
     for folder in WATCH_FOLDERS:
         folder = folder.strip()
         if not Path(folder).exists():
@@ -219,40 +223,75 @@ def initial_scan():
             if file_path.is_file() and file_path.suffix.lower() in SUPPORTED_EXTENSIONS:
                 index_file(file_path)
                 count += 1
-    logger.success(f"✅ 初期スキャン完了: {count}件処理")
+                
+    # 2. 実ファイルが存在しない古いインデックスを削除するクリーンアップ
+    cleanup_count = 0
+    try:
+        conn = sqlite3.connect(SQLITE_DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute("SELECT file_path FROM documents")
+        db_files = [row[0] for row in cursor.fetchall()]
+        conn.close()
+        
+        for db_file in db_files:
+            if not Path(db_file).exists():
+                remove_from_index(Path(db_file))
+                cleanup_count += 1
+    except Exception as e:
+        logger.error(f"クリーンアップスキャンエラー: {e}")
+        
+    logger.success(f"✅ スキャン完了: 新規/更新 {count}件, 削除クリーンアップ {cleanup_count}件")
+
+
+def polling_scan_loop():
+    """定期的に監視フォルダ内をポーリングスキャンし、差分を反映する（ファイルサーバー等用）"""
+    logger.info(f"⏳ 定期ポーリングスキャンが有効化されました (間隔: {POLL_INTERVAL_SECONDS}秒)")
+    while True:
+        try:
+            time.sleep(POLL_INTERVAL_SECONDS)
+            logger.info("🔍 定期ポーリングスキャンを開始します...")
+            initial_scan()
+        except Exception as e:
+            logger.error(f"定期ポーリングスキャン中にエラーが発生しました: {e}")
 
 
 def main():
-    logger.info("🚀 PC内部クローラー起動")
+    logger.info("🚀 PC内部・ファイルサーバークローラー起動")
     logger.info(f"監視フォルダ: {WATCH_FOLDERS}")
     logger.info(f"対応形式: {SUPPORTED_EXTENSIONS}")
-
+    logger.info(f"ポーリング間隔: {POLL_INTERVAL_SECONDS}秒")
+ 
     # DB初期化待機（APIコンテナが先に起動するため）
     time.sleep(5)
-
+ 
     # 初期スキャン
     initial_scan()
-
+ 
+    # 定期ポーリングスキャンを別スレッドで開始
+    if POLL_INTERVAL_SECONDS > 0:
+        polling_thread = threading.Thread(target=polling_scan_loop, daemon=True)
+        polling_thread.start()
+ 
     # watchdog でリアルタイム監視
     event_handler = DocumentEventHandler()
     observer = Observer()
-
+ 
     for folder in WATCH_FOLDERS:
         folder = folder.strip()
         if Path(folder).exists():
             observer.schedule(event_handler, folder, recursive=True)
             logger.info(f"👁️  監視開始: {folder}")
-
+ 
     observer.start()
     logger.info("✅ ファイル監視中... (Ctrl+C で停止)")
-
+ 
     try:
         while True:
             time.sleep(10)
     except KeyboardInterrupt:
         observer.stop()
         logger.info("🛑 クローラー停止")
-
+ 
     observer.join()
 
 

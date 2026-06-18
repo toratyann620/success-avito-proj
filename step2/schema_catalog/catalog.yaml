@@ -1,0 +1,166 @@
+# AVITO 業務定義カタログ
+# 会計・販売データベース用メタデータ
+
+database:
+  name: "business"
+  description: "検証用模擬販売・会計データベース"
+  tables:
+    # ----------------------------------------
+    # 販売（Sales）テーブル
+    # ----------------------------------------
+    - name: "customers"
+      description: "顧客マスタ。取引先企業の情報を保持する。"
+      columns:
+        - name: "customer_id"
+          type: "INTEGER"
+          description: "顧客ID（主キー）"
+        - name: "customer_name"
+          type: "TEXT"
+          description: "顧客名（取引先会社名、例：A商事）"
+        - name: "industry"
+          type: "TEXT"
+          description: "業種（例：商社、製造業、IT・サービス）"
+
+    - name: "products"
+      description: "商品マスタ。販売する製品やサービスの情報を保持する。"
+      columns:
+        - name: "product_id"
+          type: "INTEGER"
+          description: "商品ID（主キー）"
+        - name: "product_name"
+          type: "TEXT"
+          description: "商品名（例：クラウド基盤導入パック）"
+        - name: "category"
+          type: "TEXT"
+          description: "商品カテゴリ（例：システム構築、ソフトウェア、保守サービス）"
+        - name: "price"
+          type: "INTEGER"
+          description: "単価（単位：円）"
+
+    - name: "orders"
+      description: "受注ヘッダー。受注取引ごとの基本情報を保持する。"
+      columns:
+        - name: "order_id"
+          type: "INTEGER"
+          description: "受注ID（受注No.、主キー）"
+        - name: "order_date"
+          type: "DATE"
+          description: "受注日（取引日、YYYY-MM-DD）"
+        - name: "customer_id"
+          type: "INTEGER"
+          description: "顧客ID（外部キー、customers.customer_id）"
+        - name: "total_amount"
+          type: "INTEGER"
+          description: "受注総額（売上額、単位：円）"
+
+    - name: "order_items"
+      description: "受注明細。受注ごとの具体的な購入商品の情報を保持する。"
+      columns:
+        - name: "item_id"
+          type: "INTEGER"
+          description: "明細ID（主キー）"
+        - name: "order_id"
+          type: "INTEGER"
+          description: "受注ID（外部キー、orders.order_id）"
+        - name: "product_id"
+          type: "INTEGER"
+          description: "商品ID（外部キー、products.product_id）"
+        - name: "quantity"
+          type: "INTEGER"
+          description: "数量（個数や人月など）"
+        - name: "subtotal"
+          type: "INTEGER"
+          description: "小計（単価 × 数量、単位：円）"
+
+    # ----------------------------------------
+    # 会計（Accounting）テーブル
+    # ----------------------------------------
+    - name: "accounts"
+      description: "勘定科目マスタ。財務諸表用の勘定コードの定義。"
+      columns:
+        - name: "account_code"
+          type: "TEXT"
+          description: "勘定科目コード（主キー、例：111, 411）"
+        - name: "account_name"
+          type: "TEXT"
+          description: "勘定科目名（例：現金預金、売掛金、売上高、給与手当）"
+        - name: "account_type"
+          type: "TEXT"
+          description: "科目区分（'Asset'（資産）、'Liability'（負債）、'Equity'（純資産）、'Revenue'（収益）、'Expense'（費用））"
+
+    - name: "journals"
+      description: "仕訳帳ヘッダー。会計取引ごとの仕訳基本情報。"
+      columns:
+        - name: "journal_id"
+          type: "INTEGER"
+          description: "仕訳ID（主キー）"
+        - name: "entry_date"
+          type: "DATE"
+          description: "仕訳日（決算日・記帳日、YYYY-MM-DD）"
+        - name: "description"
+          type: "TEXT"
+          description: "取引摘要（説明、例：売上計上、家賃支払）"
+
+    - name: "journal_lines"
+      description: "仕訳明細。仕訳ごとの具体的な借方・貸方の内訳金額。"
+      columns:
+        - name: "line_id"
+          type: "INTEGER"
+          description: "仕訳明細ID（主キー）"
+        - name: "journal_id"
+          type: "INTEGER"
+          description: "仕訳ID（外部キー、journals.journal_id）"
+        - name: "account_code"
+          type: "TEXT"
+          description: "勘定科目コード（外部キー、accounts.account_code）"
+        - name: "debit"
+          type: "INTEGER"
+          description: "借方金額（増加／費用発生、単位：円）"
+        - name: "credit"
+          type: "INTEGER"
+          description: "貸方金額（減少／収益発生、単位：円）"
+
+  # ----------------------------------------
+  # テーブル間結合キー定義（JOINヘルプ）
+  # ----------------------------------------
+  joins:
+    - from_table: "orders"
+      to_table: "customers"
+      join_clause: "orders.customer_id = customers.customer_id"
+    - from_table: "order_items"
+      to_table: "orders"
+      join_clause: "order_items.order_id = orders.order_id"
+    - from_table: "order_items"
+      to_table: "products"
+      join_clause: "order_items.product_id = products.product_id"
+    - from_table: "journal_lines"
+      to_table: "journals"
+      join_clause: "journal_lines.journal_id = journals.journal_id"
+    - from_table: "journal_lines"
+      to_table: "accounts"
+      join_clause: "journal_lines.account_code = accounts.account_code"
+
+  # ----------------------------------------
+  # 主要な業務KPI・指標定義
+  # ----------------------------------------
+  kpis:
+    - name: "売上額（受注額）"
+      calculation: "SUM(orders.total_amount)"
+      filters: []
+      description: "受注された売上の総額。"
+    - name: "業種別売上"
+      calculation: "SELECT customers.industry, SUM(orders.total_amount) FROM orders JOIN customers ON orders.customer_id = customers.customer_id GROUP BY customers.industry"
+      description: "取引先の業種ごとの売上合計。"
+    - name: "製品別売上"
+      calculation: "SELECT products.product_name, SUM(order_items.subtotal) FROM order_items JOIN products ON order_items.product_id = products.product_id GROUP BY products.product_name"
+      description: "商品ごとの売上高。"
+    - name: "利益（収益 - 費用）"
+      calculation: "SUM(journal_lines.credit) - SUM(journal_lines.debit)"
+      filters:
+        - "accounts.account_type IN ('Revenue', 'Expense')"
+      description: "会計上の利益計算（損益計算書の当期純利益に近い概念）。仕訳から Revenue の合計（Credit）から Expense の合計（Debit）を引いたもの。"
+    - name: "キャッシュフロー（現金残高）"
+      calculation: "SUM(journal_lines.debit) - SUM(journal_lines.credit)"
+      filters:
+        - "journal_lines.account_code = '111'"
+      description: "「現金預金(111)」口座の現在の純増減高。"

@@ -30,7 +30,7 @@ async def transcribe(audio: UploadFile = File(...)):
 
     try:
         import whisper
-        model = whisper.load_model("base")  # "base" / "small" / "medium" / "large-v3"
+        model = whisper.load_model("tiny")  # "base" / "small" / "medium" / "large-v3"
         result = model.transcribe(tmp_path, language="ja")
         text = result["text"].strip()
         logger.info(f"音声認識結果: {text[:50]}...")

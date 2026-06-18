@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>開発進捗ダッシュボード | AI駆動型ナレッジ&データ活用プラットフォーム</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Noto+Sans+JP:wght@300;400;500;700&display=swap');
+  *{margin:0;padding:0;box-sizing:border-box;}
+  :root{
+    --bg:#0a0e1a;--surface:#111827;--surface2:#1a2235;--border:#1e2d45;
+    --accent:#3b82f6;--accent2:#6366f1;--green:#10b981;--yellow:#f59e0b;
+    --red:#ef4444;--gray:#6b7280;--text:#f1f5f9;--subtext:#94a3b8;
+  }
+  body{font-family:'Inter','Noto Sans JP',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;padding:32px 24px;}
+  .container{max-width:1100px;margin:0 auto;}
+
+  /* ヘッダー */
+  .header{background:linear-gradient(135deg,#1e3a5f 0%,#1a1f35 100%);border:1px solid var(--border);border-radius:16px;padding:32px;margin-bottom:32px;position:relative;overflow:hidden;}
+  .header::before{content:'';position:absolute;top:-60px;right:-60px;width:200px;height:200px;background:radial-gradient(circle,rgba(59,130,246,0.15) 0%,transparent 70%);}
+  .header h1{font-size:1.6rem;font-weight:700;margin-bottom:6px;}
+  .header h1 span{background:linear-gradient(90deg,#60a5fa,#818cf8);-webkit-background-clip:text;-webkit-text-fill-color:transparent;}
+  .header p{color:var(--subtext);font-size:0.875rem;}
+  .meta{display:flex;gap:24px;margin-top:20px;flex-wrap:wrap;}
+  .meta-item{background:rgba(255,255,255,0.05);border:1px solid var(--border);border-radius:8px;padding:10px 16px;}
+  .meta-item .label{font-size:0.7rem;color:var(--subtext);text-transform:uppercase;letter-spacing:.05em;}
+  .meta-item .value{font-size:0.95rem;font-weight:600;margin-top:2px;}
+
+  /* 全体進捗 */
+  .overall{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:24px;margin-bottom:28px;}
+  .overall h2{font-size:0.8rem;text-transform:uppercase;letter-spacing:.08em;color:var(--subtext);margin-bottom:14px;}
+  .progress-bar-wrap{background:#1e2d45;border-radius:999px;height:10px;overflow:hidden;margin-bottom:8px;}
+  .progress-bar-fill{height:100%;border-radius:999px;background:linear-gradient(90deg,#3b82f6,#6366f1);transition:width 1s ease;}
+  .progress-label{font-size:0.8rem;color:var(--subtext);text-align:right;}
+  .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-top:20px;}
+  .stat{background:var(--surface2);border-radius:10px;padding:14px;text-align:center;}
+  .stat .num{font-size:1.8rem;font-weight:700;}
+  .stat .desc{font-size:0.72rem;color:var(--subtext);margin-top:2px;}
+
+  /* フェーズカード */
+  .phases{display:grid;gap:16px;}
+  .phase{background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden;transition:box-shadow .2s;}
+  .phase:hover{box-shadow:0 4px 24px rgba(59,130,246,0.1);}
+  .phase-header{display:flex;align-items:center;gap:16px;padding:18px 22px;cursor:pointer;}
+  .phase-badge{width:40px;height:40px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:0.85rem;flex-shrink:0;}
+  .phase-info{flex:1;}
+  .phase-info h3{font-size:1rem;font-weight:600;}
+  .phase-info p{font-size:0.78rem;color:var(--subtext);margin-top:2px;}
+  .phase-right{display:flex;align-items:center;gap:12px;}
+  .phase-pct{font-size:1.1rem;font-weight:700;}
+  .status-pill{padding:4px 12px;border-radius:999px;font-size:0.72rem;font-weight:600;}
+  .s-done{background:rgba(16,185,129,0.15);color:#10b981;border:1px solid rgba(16,185,129,0.3);}
+  .s-wip{background:rgba(59,130,246,0.15);color:#60a5fa;border:1px solid rgba(59,130,246,0.3);}
+  .s-wait{background:rgba(107,114,128,0.15);color:#9ca3af;border:1px solid rgba(107,114,128,0.3);}
+  .phase-mini-bar{height:4px;background:#1e2d45;}
+  .phase-mini-fill{height:100%;transition:width 1.2s ease;}
+
+  /* タスクリスト */
+  .tasks{padding:0 22px 18px;}
+  .task-group-label{font-size:0.7rem;text-transform:uppercase;letter-spacing:.08em;color:var(--subtext);margin:14px 0 8px;}
+  .task{display:flex;align-items:flex-start;gap:10px;padding:8px 0;border-bottom:1px solid rgba(255,255,255,0.04);}
+  .task:last-child{border-bottom:none;}
+  .task-icon{width:20px;height:20px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:0.7rem;flex-shrink:0;margin-top:1px;}
+  .t-done{background:rgba(16,185,129,0.2);color:#10b981;}
+  .t-wip{background:rgba(59,130,246,0.2);color:#60a5fa;}
+  .t-wait{background:rgba(107,114,128,0.15);color:#6b7280;}
+  .task-text{font-size:0.85rem;flex:1;}
+  .task-text.done-text{color:var(--subtext);text-decoration:line-through;}
+  .task-tag{font-size:0.65rem;padding:2px 8px;border-radius:4px;background:rgba(99,102,241,0.15);color:#818cf8;flex-shrink:0;}
+
+  /* リスク */
+  .risks{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:22px;margin-top:28px;}
+  .risks h2{font-size:0.8rem;text-transform:uppercase;letter-spacing:.08em;color:var(--subtext);margin-bottom:14px;}
+  .risk{display:flex;gap:12px;align-items:flex-start;padding:10px 0;border-bottom:1px solid rgba(255,255,255,0.04);}
+  .risk:last-child{border-bottom:none;}
+  .risk-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;margin-top:5px;}
+  .r-high{background:#ef4444;}
+  .r-mid{background:#f59e0b;}
+  .r-low{background:#10b981;}
+  .risk-body .title{font-size:0.85rem;font-weight:500;}
+  .risk-body .desc{font-size:0.75rem;color:var(--subtext);margin-top:3px;}
+
+  footer{text-align:center;color:var(--gray);font-size:0.72rem;margin-top:36px;}
+  .chevron{transition:transform .3s;font-size:0.75rem;color:var(--subtext);}
+  .open .chevron{transform:rotate(180deg);}
+  .task-section{display:none;}
+  .task-section.visible{display:block;}
+</style>
+</head>
+<body>
+<div class="container">
+
+  <!-- ヘッダー -->
+  <div class="header">
+    <h1><span>AI駆動型ナレッジ&データ活用プラットフォーム</span></h1>
+    <p>スタンドアロン型・完全ローカル動作 ／ 開発進捗ダッシュボード</p>
+    <div class="meta">
+      <div class="meta-item"><div class="label">クライアント</div><div class="value">SuccessKnowledge LLC</div></div>
+      <div class="meta-item"><div class="label">更新日</div><div class="value" id="today"></div></div>
+      <div class="meta-item"><div class="label">全体進捗</div><div class="value" style="color:#60a5fa" id="total-pct">--</div></div>
+      <div class="meta-item"><div class="label">ステータス</div><div class="value" style="color:#10b981">🟢 進行中</div></div>
+    </div>
+  </div>
+
+  <!-- 全体進捗 -->
+  <div class="overall">
+    <h2>全体進捗</h2>
+    <div class="progress-bar-wrap"><div class="progress-bar-fill" id="overall-bar" style="width:0%"></div></div>
+    <div class="progress-label" id="overall-label">計算中...</div>
+    <div class="stats">
+      <div class="stat"><div class="num" style="color:#10b981" id="s-done">0</div><div class="desc">完了タスク</div></div>
+      <div class="stat"><div class="num" style="color:#60a5fa" id="s-wip">0</div><div class="desc">進行中</div></div>
+      <div class="stat"><div class="num" style="color:#9ca3af" id="s-wait">0</div><div class="desc">待機中</div></div>
+      <div class="stat"><div class="num" style="color:#f59e0b" id="s-total">0</div><div class="desc">総タスク数</div></div>
+    </div>
+  </div>
+
+  <!-- フェーズ -->
+  <div class="phases" id="phases"></div>
+
+  <!-- リスク -->
+  <div class="risks">
+    <h2>⚠️ リスク管理</h2>
+    <div class="risk"><div class="risk-dot r-high"></div><div class="risk-body"><div class="title">Gemma3:12b 日本語精度不足</div><div class="desc">対策: Qwen2.5:14b / llama3.1:8b をバックアップとして検証</div></div></div>
+    <div class="risk"><div class="risk-dot r-high"></div><div class="risk-body"><div class="title">Docker Desktop VRAM不足</div><div class="desc">対策: GPU対応確認・CPU推論モードへの切替手順を整備</div></div></div>
+    <div class="risk"><div class="risk-dot r-mid"></div><div class="risk-body"><div class="title">Open Notebook 日本語対応の限界</div><div class="desc">対策: カスタムRAGパイプラインへの切替判断基準を事前定義</div></div></div>
+    <div class="risk"><div class="risk-dot r-high"></div><div class="risk-body"><div class="title">NL2SQL精度（Step2）</div><div class="desc">対策: 業務定義カタログの品質確保・ヒアリング必須</div></div></div>
+    <div class="risk"><div class="risk-dot r-mid"></div><div class="risk-body"><div class="title">ファイルサーバアクセス権限</div><div class="desc">対策: 読み取り専用アクセス権をIT部門と事前調整</div></div></div>
+  </div>
+
+  <footer>Confidential — Copyright 2026 SuccessKnowledge LLC ／ 最終更新: <span id="updated"></span></footer>
+</div>
+
+<script>
+const phases = [
+  {
+    id: 0, label: "Phase 0", title: "環境構築・基盤整備", weeks: "Week 1-2",
+    color: "#10b981", pct: 100,
+    status: "done",
+    tasks: [
+      {s:"done", text:"プロジェクトフォルダ構成の確定"},
+      {s:"done", text:"Git リポジトリ初期化 + .gitignore 設定"},
+      {s:"done", text:".env.example 作成"},
+      {s:"done", text:"docker-compose.yml 基本構成作成（Ollama + API + クローラー）"},
+      {s:"done", text:"FastAPI バックエンド骨格作成（main.py / routers / services）"},
+      {s:"done", text:"SQLite FTS5 DB初期化スクリプト"},
+      {s:"done", text:"PC内部クローラー（watchdog + pathlib）実装"},
+      {s:"done", text:"RAGエンジン初期実装（FTS5 + LLMクライアント）"},
+      {s:"done", text:"Ollama コンテナ起動 + Gemma3:12b モデル準備"},
+      {s:"done", text:"FastAPI & Next.js 起動自動化スクリプト整備"},
+      {s:"done", text:"ローカルLLM疎通・タイムアウト耐性実装（極上フォールバック）"},
+      {s:"done", text:"README.md（環境構築・起動手順）完成"},
+    ]
+  },
+  {
+    id: 1, label: "Phase 1", title: "Step1-Core RAG基盤 + チャットUI", weeks: "Week 3-6",
+    color: "#3b82f6", pct: 100,
+    status: "done",
+    tasks: [
+      {s:"done", text:"極上GeminiライクUIの完全移植 & Next.jsビルド成功"},
+      {s:"done", text:"SQLite FTS5 全文検索 + 日本語トークナイザー・クレンジング統合"},
+      {s:"done", text:"Ollama / Gemma 連携プロンプトテンプレート整備"},
+      {s:"done", text:"FTS5データベース連携・安全クエリ構文ハンドリング"},
+      {s:"done", text:"Ollama未稼働時の本物DBソース返却機能（極上フォールバック搭載）"},
+      {s:"done", text:"PDF即時アップロード財務分析API（POST /analyze-pdf）新規構築"},
+      {s:"done", text:"Chart.js を使った美しい損益比較ダッシュボード（HTML）動的描画"},
+      {s:"done", text:"フォルダ監視・自動インデクシング同期検証"},
+      {s:"done", text:"フロント・バックエンド完全実接続（CORS/ポート競合解消）"},
+    ]
+  },
+  {
+    id: 2, label: "Phase 2", title: "Step1 完全版（音声・文書生成・外部検索）", weeks: "Week 7-10",
+    color: "#6366f1", pct: 100,
+    status: "done",
+    tasks: [
+      {s:"done", text:"Whisper 音声認識統合（ローカル・日本語モデル）"},
+      {s:"done", text:"ファイルサーバフォルダインデクサ実装"},
+      {s:"done", text:"Word文書自動生成（python-docx）物理ファイル生成＆フロントBlob保存"},
+      {s:"done", text:"Excel文書自動生成（openpyxl）物理ファイル生成＆フロントBlob保存"},
+      {s:"done", text:"PowerPoint提案書自動生成（python-pptx）物理ファイル生成＆フロントBlob保存"},
+      {s:"done", text:"Brave Search API 外部検索統合（指示時のみ・出典URL保持）"},
+      {s:"done", text:"運用モード切替UI（内部機密 / 提案書）"},
+      {s:"done", text:"カスタムWebUI 完成（Next.js）"},
+      {s:"done", text:"E2Eテスト実施（主要ユースケース10パターン）"},
+      {s:"done", text:"ユーザーマニュアル（操作手順書）作成"},
+    ]
+  },
+  {
+    id: 3, label: "Phase 3", title: "Step2 設計・NL2SQL実装", weeks: "Week 11-13",
+    color: "#f59e0b", pct: 100,
+    status: "done",
+    tasks: [
+      {s:"done", text:"対象DBスキーマ調査・整理（会計DB・販売DB）"},
+      {s:"done", text:"業務定義カタログ作成（KPI定義・用語辞書・テーブル-項目マッピング）"},
+      {s:"done", text:"NL2SQLエンジン設計・プロンプトエンジニアリング"},
+      {s:"done", text:"SQLチェック機能実装（禁止SQL検出：DROP/DELETE/UPDATE等）"},
+      {s:"done", text:"DB接続ブリッジ実装（SQLAlchemy・読み取り専用接続）"},
+      {s:"done", text:"監査ログ機能実装（実行SQL・利用者・実行時刻）"},
+      {s:"done", text:"NL2SQL精度テスト（業務SQLクエリ50問）"},
+      {s:"done", text:"帳票生成エンジン統合（DB結果からExcel/PPT自動生成）"},
+    ]
+  },
+  {
+    id: 4, label: "Phase 4", title: "Step2 DB連携・最終統合", weeks: "Week 14-16",
+    color: "#ec4899", pct: 100,
+    status: "done",
+    tasks: [
+      {s:"done", text:"Step1 + Step2 統合テスト（全機能結合テスト）"},
+      {s:"done", text:"パフォーマンス最適化（LLM応答時間・検索速度）"},
+      {s:"done", text:"セキュリティ監査（外部通信チェック・認証情報管理）"},
+      {s:"done", text:"フェデレーテッドデータマート設計書作成"},
+      {s:"done", text:"納品ドキュメント一式（設計書・操作マニュアル・運用手順書）"},
+    ]
+  }
+];
+
+// 統計計算
+let totalDone=0, totalWip=0, totalWait=0;
+phases.forEach(p=>p.tasks.forEach(t=>{
+  if(t.s==="done") totalDone++;
+  else if(t.s==="wip") totalWip++;
+  else totalWait++;
+}));
+const totalAll = totalDone+totalWip+totalWait;
+const overallPct = Math.round((totalDone/totalAll)*100);
+
+document.getElementById('today').textContent = new Date().toLocaleDateString('ja-JP',{year:'numeric',month:'long',day:'numeric'});
+document.getElementById('updated').textContent = new Date().toLocaleString('ja-JP');
+document.getElementById('total-pct').textContent = overallPct + '%';
+document.getElementById('s-done').textContent = totalDone;
+document.getElementById('s-wip').textContent = totalWip;
+document.getElementById('s-wait').textContent = totalWait;
+document.getElementById('s-total').textContent = totalAll;
+document.getElementById('overall-label').textContent = `${totalDone} / ${totalAll} タスク完了 (${overallPct}%)`;
+
+setTimeout(()=>{
+  document.getElementById('overall-bar').style.width = overallPct+'%';
+},100);
+
+// フェーズレンダリング
+const container = document.getElementById('phases');
+phases.forEach(p=>{
+  const doneCnt = p.tasks.filter(t=>t.s==="done").length;
+  const wipCnt  = p.tasks.filter(t=>t.s==="wip").length;
+  const phasePct= p.pct;
+  const statusClass = p.status==="done"?"s-done":p.status==="wip"?"s-wip":"s-wait";
+  const statusLabel = p.status==="done"?"✅ 完了":p.status==="wip"?"🔵 進行中":"⏳ 待機中";
+
+  const el = document.createElement('div');
+  el.className='phase';
+  el.innerHTML=`
+    <div class="phase-header" onclick="toggle(${p.id})">
+      <div class="phase-badge" style="background:${p.color}22;color:${p.color}">${p.label}</div>
+      <div class="phase-info">
+        <h3>${p.title}</h3>
+        <p>${p.weeks} ／ ${doneCnt}/${p.tasks.length} タスク完了</p>
+      </div>
+      <div class="phase-right">
+        <span class="phase-pct" style="color:${p.color}">${phasePct}%</span>
+        <span class="status-pill ${statusClass}">${statusLabel}</span>
+        <span class="chevron" id="chev-${p.id}">▼</span>
+      </div>
+    </div>
+    <div class="phase-mini-bar">
+      <div class="phase-mini-fill" id="bar-${p.id}" style="width:0%;background:${p.color}"></div>
+    </div>
+    <div class="task-section" id="tasks-${p.id}">
+      <div class="tasks">
+        ${p.tasks.map(t=>`
+          <div class="task">
+            <div class="task-icon ${t.s==="done"?"t-done":t.s==="wip"?"t-wip":"t-wait"}">
+              ${t.s==="done"?"✓":t.s==="wip"?"●":"○"}
+            </div>
+            <span class="task-text ${t.s==="done"?"done-text":""}">${t.text}</span>
+          </div>
+        `).join('')}
+      </div>
+    </div>
+  `;
+  container.appendChild(el);
+  setTimeout(()=>{document.getElementById('bar-'+p.id).style.width=phasePct+'%';},200);
+});
+
+function toggle(id){
+  const sec = document.getElementById('tasks-'+id);
+  const chev = document.getElementById('chev-'+id);
+  sec.classList.toggle('visible');
+  chev.style.transform = sec.classList.contains('visible') ? 'rotate(180deg)':'rotate(0deg)';
+}
+
+// Phase0はデフォルトで開く
+toggle(0);
+</script>
+</body>
+</html>

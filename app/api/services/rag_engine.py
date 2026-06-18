@@ -32,6 +32,19 @@ class RAGResponse:
     query: str
 
 
+def clean_fts_query(query: str) -> str:
+    """FTS5用の検索クエリをクレンジングする（記号の除去など）"""
+    import re
+    # ドットや記号などFTS5でシンタックスエラーになりやすい文字を除去・スペースに置換
+    cleaned = re.sub(r'[^\w\s\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FAF]', ' ', query)
+    # 単語に分割
+    words = [w.strip() for w in cleaned.split() if w.strip()]
+    if not words:
+        return ""
+    # 単語を OR で結合して検索のヒット率を高める
+    return " OR ".join(words[:5])
+
+
 class RAGEngine:
     """SQLite FTS5 + LLMによるRAGエンジン"""
 
@@ -42,6 +55,10 @@ class RAGEngine:
 
     def search_fts(self, query: str, top_k: int = None) -> list[SearchResult]:
         """FTS5全文検索でドキュメントを検索する"""
+        query = clean_fts_query(query)
+        if not query:
+            return []
+
         k = top_k or self.top_k
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row

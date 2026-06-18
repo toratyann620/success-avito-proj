@@ -53,9 +53,9 @@ docker compose up -d
 ### 4. アクセス
 | サービス | URL |
 |---------|-----|
-| **チャットUI** | http://localhost:3000 |
+| **チャットUI** | http://localhost:3002 |
 | **API ドキュメント** | http://localhost:8000/docs |
-| **Open Notebook** | http://localhost:5000 |
+| **Open Notebook** | http://localhost:5001 |
 | **Ollama** | http://localhost:11434 |
 
 ---

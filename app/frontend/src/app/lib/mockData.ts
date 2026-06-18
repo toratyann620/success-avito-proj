@@ -55,6 +55,25 @@ export const THINKING_PHASES: Record<string, ThinkingPhase[]> = {
   ],
 };
 
+export interface Citation {
+  file_name?: string;
+  doc_id?: string;
+  file_path?: string;
+  snippet?: string;
+  score?: number;
+}
+
+export interface Source {
+  id: number;
+  name: string;
+  type: string;
+  size: number;
+  uploaded_at: string;
+  selected: boolean;
+}
+
+export type OutputFile = FileChip & { id: string };
+
 export interface Message {
   id: string;
   role: "user" | "assistant";
@@ -65,6 +84,8 @@ export interface Message {
   attachedFileName?: string;    // アップロードしたファイル名
   isRestricted?: boolean;
   thinkingKey?: string;
+  citations?: Citation[];       // RAG出典（APIレスポンスのsourcesフィールド）
+  feedback?: "up" | "down";
   timestamp: Date;
 }
 
@@ -89,12 +110,6 @@ export interface ChartData {
   labels: string[];
   values: number[];
   unit: string;
-}
-
-export interface HistoryItem {
-  id: string;
-  title: string;
-  timestamp: Date;
 }
 
 // =====================================
@@ -288,15 +303,6 @@ export function getMockResponse(
     content: `「${trimmed}」について、社内ナレッジベースを検索しています...\n\n関連ドキュメントが **${Math.floor(Math.random() * 50) + 10}件** 見つかりました。より具体的なご質問をいただくと、精度の高い回答を提供できます。`,
   };
 }
-
-// デモ用履歴データ
-export const initialHistory: HistoryItem[] = [
-  { id: "h1", title: "A部品の見積書作成", timestamp: new Date(Date.now() - 3600000) },
-  { id: "h2", title: "Q1営業レポート分析", timestamp: new Date(Date.now() - 86400000) },
-  { id: "h3", title: "新製品ロードマップ提案", timestamp: new Date(Date.now() - 172800000) },
-  { id: "h4", title: "競合他社比較レポート", timestamp: new Date(Date.now() - 259200000) },
-  { id: "h5", title: "採用計画 2025年度版", timestamp: new Date(Date.now() - 345600000) },
-];
 
 // クイックプロンプト
 export const quickPrompts = [

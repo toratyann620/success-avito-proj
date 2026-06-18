@@ -3,14 +3,20 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  Plus, MessageSquare, Trash2,
-  Mic, Paperclip, Send, ChevronDown,
-  Shield, User, Settings, HelpCircle,
-  PanelLeftClose, PanelLeftOpen, X,
+  Plus, Trash2, Mic, Paperclip, Send, Shield, User, X,
+  Search, NotebookPen, StickyNote, FileText, FileSpreadsheet,
+  Presentation, FileType, BarChart3, Map as MapIcon, ClipboardList,
+  CircleHelp, TrendingUp, Table2, Download,
 } from "lucide-react";
-import type { Message, UserRole, HistoryItem } from "@/app/lib/mockData";
-import { getMockResponse, initialHistory, quickPrompts, THINKING_PHASES } from "@/app/lib/mockData";
+import type { Message, UserRole, Source, OutputFile } from "@/app/lib/mockData";
+import { getMockResponse, quickPrompts, THINKING_PHASES } from "@/app/lib/mockData";
 import { MessageBubble, GeneratingIndicator, GeniusLogo } from "@/app/components/MessageBubble";
+
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+
+type ReferenceMode = "auto" | "manual";
+type StudioTab = "studio" | "memo";
+type MemoDraft = { id: string; title: string; content: string };
 
 /* ============================
    権限トグル
@@ -18,11 +24,10 @@ import { MessageBubble, GeneratingIndicator, GeniusLogo } from "@/app/components
 function RoleToggle({ role, onToggle }: { role: UserRole; onToggle: () => void }) {
   const isAdmin = role === "admin";
   return (
-    <div 
+    <div
       onClick={onToggle}
       style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}
     >
-      {/* ラベル */}
       <div style={{
         display: "flex", alignItems: "center", gap: 6,
         padding: "4px 10px", borderRadius: 100,
@@ -34,7 +39,6 @@ function RoleToggle({ role, onToggle }: { role: UserRole; onToggle: () => void }
         <span>{isAdmin ? "管理者" : "一般ユーザー"}</span>
       </div>
 
-      {/* トグルスイッチ */}
       <div
         className="toggle-track"
         style={{ background: isAdmin ? "linear-gradient(135deg,#f59e0b,#ef4444)" : "linear-gradient(135deg,#10b981,#3b82f6)", pointerEvents: "none" }}
@@ -58,7 +62,7 @@ function RoleToggle({ role, onToggle }: { role: UserRole; onToggle: () => void }
    ============================ */
 function DemoToggle({ demoMode, onToggle }: { demoMode: boolean; onToggle: () => void }) {
   return (
-    <div 
+    <div
       onClick={onToggle}
       style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}
     >
@@ -91,100 +95,6 @@ function DemoToggle({ demoMode, onToggle }: { demoMode: boolean; onToggle: () =>
 }
 
 /* ============================
-   サイドバー
-   ============================ */
-function Sidebar({
-  open,
-  history,
-  currentId,
-  onNewChat,
-  onSelectHistory,
-}: {
-  open: boolean;
-  history: HistoryItem[];
-  currentId: string | null;
-  onNewChat: () => void;
-  onSelectHistory: (id: string) => void;
-}) {
-  return (
-    <AnimatePresence initial={false}>
-      {open && (
-        <motion.nav
-          key="sidebar"
-          initial={{ width: 0, opacity: 0 }}
-          animate={{ width: 256, opacity: 1 }}
-          exit={{ width: 0, opacity: 0 }}
-          transition={{ duration: 0.25, ease: "easeInOut" }}
-          style={{
-            flexShrink: 0,
-            overflow: "hidden",
-            background: "var(--bg-sidebar)",
-            display: "flex",
-            flexDirection: "column",
-            height: "100%",
-          }}
-        >
-          <div style={{ padding: "12px 8px", display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
-
-            {/* トップ: ハンバーガー + ロゴ */}
-            <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "4px 8px", marginBottom: 8 }}>
-              <GeniusLogo size={28} />
-              <div style={{ display: "flex", flexDirection: "column", marginLeft: 2 }}>
-                <span style={{ fontSize: 12, color: "#8ab4f8", fontWeight: 700, letterSpacing: "0.5px" }}>AVITO</span>
-                <span style={{ fontSize: 10, color: "#e3e3e3", fontWeight: 500, letterSpacing: "-0.2px", lineHeight: 1.2 }}>AI-driven Value into Transformative Org</span>
-              </div>
-            </div>
-
-            {/* 新規チャット */}
-            <button className="new-chat-btn" onClick={onNewChat} style={{ marginBottom: 16 }}>
-              <Plus size={18} />
-              <span>新しいチャット</span>
-            </button>
-
-            {/* 最近の会話 */}
-            <div style={{ fontSize: 12, fontWeight: 600, color: "#6e6e6e", padding: "0 12px", marginBottom: 6, letterSpacing: "0.3px", textTransform: "uppercase" }}>
-              最近の会話
-            </div>
-
-            {/* 履歴リスト */}
-            <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", gap: 2, minHeight: 0 }}>
-              {history.map((item) => (
-                <div
-                  key={item.id}
-                  className={`sidebar-item${currentId === item.id ? " active" : ""}`}
-                  onClick={() => onSelectHistory(item.id)}
-                  style={{ justifyContent: "space-between" }}
-                >
-                  <div style={{ display: "flex", alignItems: "center", gap: 10, overflow: "hidden" }}>
-                    <MessageSquare size={15} style={{ flexShrink: 0, color: "#6e6e6e" }} />
-                    <span style={{ fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                      {item.title}
-                    </span>
-                  </div>
-                  <Trash2 size={14} style={{ color: "#6e6e6e", flexShrink: 0, opacity: 0 }} className="trash-icon" />
-                </div>
-              ))}
-            </div>
-
-            {/* ボトム: 設定 */}
-            <div style={{ paddingTop: 12, borderTop: "1px solid rgba(255,255,255,0.06)", display: "flex", flexDirection: "column", gap: 2 }}>
-              <div className="sidebar-item" style={{ gap: 10 }}>
-                <Settings size={18} style={{ color: "#6e6e6e" }} />
-                <span style={{ fontSize: 13 }}>設定</span>
-              </div>
-              <div className="sidebar-item" style={{ gap: 10 }}>
-                <HelpCircle size={18} style={{ color: "#6e6e6e" }} />
-                <span style={{ fontSize: 13 }}>ヘルプ</span>
-              </div>
-            </div>
-          </div>
-        </motion.nav>
-      )}
-    </AnimatePresence>
-  );
-}
-
-/* ============================
    ウェルカム（初期）画面
    ============================ */
 function WelcomeView({ onPrompt }: { onPrompt: (p: string) => void }) {
@@ -195,11 +105,10 @@ function WelcomeView({ onPrompt }: { onPrompt: (p: string) => void }) {
       flexDirection: "column",
       alignItems: "center",
       justifyContent: "center",
-      paddingBottom: 160,
+      paddingBottom: 80,
       paddingLeft: 24,
       paddingRight: 24,
     }}>
-      {/* タイトルロゴ + 挨拶 */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
@@ -216,7 +125,7 @@ function WelcomeView({ onPrompt }: { onPrompt: (p: string) => void }) {
         </div>
 
         <h1 style={{
-          fontSize: 36,
+          fontSize: 32,
           fontWeight: 600,
           background: "linear-gradient(135deg, #4285f4, #9b59b6, #ea4335)",
           WebkitBackgroundClip: "text",
@@ -227,12 +136,11 @@ function WelcomeView({ onPrompt }: { onPrompt: (p: string) => void }) {
         }}>
           こんにちは
         </h1>
-        <p style={{ fontSize: 36, fontWeight: 600, color: "#6e6e6e" }}>
-          何かお手伝いできることはありますか？
+        <p style={{ fontSize: 18, fontWeight: 500, color: "#6e6e6e" }}>
+          左のパネルからソースを追加するか、何でも質問してください
         </p>
       </motion.div>
 
-      {/* サジェストチップ（2×2グリッド） */}
       <div style={{
         display: "grid",
         gridTemplateColumns: "repeat(2, 1fr)",
@@ -266,6 +174,21 @@ function WelcomeView({ onPrompt }: { onPrompt: (p: string) => void }) {
 }
 
 /* ============================
+   推奨プロンプト（会話継続中）
+   ============================ */
+function SuggestedPrompts({ onPick }: { onPick: (p: string) => void }) {
+  return (
+    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", padding: "4px 0 24px" }}>
+      {quickPrompts.map((qp, i) => (
+        <button key={i} className="prompt-chip" onClick={() => onPick(qp.prompt)}>
+          {qp.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/* ============================
    マイクボタン
    ============================ */
 function MicBtn({ recording, onClick }: { recording: boolean; onClick: () => void }) {
@@ -286,7 +209,6 @@ function MicBtn({ recording, onClick }: { recording: boolean; onClick: () => voi
       transition={recording ? { duration: 1, repeat: Infinity } : {}}
     >
       {recording ? (
-        /* 波形アニメーション */
         <div style={{ display: "flex", alignItems: "center", gap: 2, height: 18 }}>
           {[12, 18, 14, 20, 10].map((h, i) => (
             <div key={i} className="wave-bar" style={{ height: h }} />
@@ -331,9 +253,9 @@ function AttachedFileBadge({ name, onRemove }: { name: string; onRemove: () => v
 }
 
 /* ============================
-   入力エリア
+   チャット入力欄（下部固定・常時表示）
    ============================ */
-function InputArea({
+function ChatInputBar({
   value,
   onChange,
   onSend,
@@ -360,7 +282,7 @@ function InputArea({
     }
   };
 
-  const handleMic = async () => {
+  const handleMic = () => {
     setRecording((v) => !v);
     if (!recording) {
       setTimeout(() => setRecording(false), 4000);
@@ -368,25 +290,15 @@ function InputArea({
   };
 
   return (
-    <div style={{
-      position: "sticky",
-      bottom: 0,
-      width: "100%",
-      background: "var(--bg-base)",
-      paddingTop: 12,
-      paddingBottom: 20,
-    }}>
-      <div style={{ maxWidth: 720, margin: "0 auto", padding: "0 16px" }}>
-        {/* 添付ファイル表示 */}
+    <div style={{ flexShrink: 0, background: "var(--bg-base)", padding: "12px 24px 20px" }}>
+      <div style={{ maxWidth: 720, margin: "0 auto" }}>
         <AnimatePresence>
           {attachedFile && (
             <AttachedFileBadge name={attachedFile.name} onRemove={onRemoveFile} />
           )}
         </AnimatePresence>
 
-        {/* 入力ボックス */}
         <div className="input-wrapper" style={{ padding: "12px 16px" }}>
-          {/* テキストエリア */}
           <textarea
             value={value}
             onChange={(e) => {
@@ -413,9 +325,7 @@ function InputArea({
             }}
           />
 
-          {/* ボタン行 */}
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-            {/* 左: クリップ・マイク */}
             <div style={{ display: "flex", gap: 4 }}>
               <input
                 ref={fileInputRef}
@@ -441,21 +351,9 @@ function InputArea({
               >
                 <Paperclip size={18} style={{ color: attachedFile ? "#8ab4f8" : "#ababab" }} />
               </motion.button>
-              <motion.button
-                whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }}
-                onClick={handleMic}
-                style={{
-                  width: 36, height: 36, borderRadius: "50%",
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                  background: recording ? "linear-gradient(135deg,#ea4335,#c62828)" : "transparent",
-                  border: "none", cursor: "pointer",
-                }}
-              >
-                <Mic size={18} style={{ color: recording ? "white" : "#ababab" }} />
-              </motion.button>
+              <MicBtn recording={recording} onClick={handleMic} />
             </div>
 
-            {/* 右: 送信ボタン */}
             <motion.button
               onClick={() => onSend()}
               disabled={(!value.trim() && !attachedFile) || disabled}
@@ -477,9 +375,8 @@ function InputArea({
           </div>
         </div>
 
-        {/* フッター注記 */}
         <p style={{ textAlign: "center", fontSize: 12, color: "#4b4b4b", marginTop: 8 }}>
-          本システムは RAG基盤で社内ナレッジ847件を参照しています
+          本システムは RAG基盤で社内ナレッジを参照しています
         </p>
       </div>
     </div>
@@ -588,13 +485,13 @@ function LoginScreen({ onLogin }: { onLogin: () => void }) {
 /* ============================
    DB検索結果をHTMLテーブルへフォーマットする
    ============================ */
-function formatDbResultsToHtml(results: any[], sql: string, durationMs: number): string {
+function formatDbResultsToHtml(results: Record<string, unknown>[], sql: string, durationMs: number): string {
   if (!results || results.length === 0) return "";
-  
+
   const headers = Object.keys(results[0]);
-  
+
   const headerHtml = headers.map(h => `<th style="padding: 10px 12px; border-bottom: 2px solid rgba(255,255,255,0.15); text-align: left; font-size: 13px; color: #8ab4f8; font-weight: 600;">${h}</th>`).join("");
-  
+
   const rowsHtml = results.map(row => {
     const cells = headers.map(h => {
       let val = row[h];
@@ -627,6 +524,309 @@ function formatDbResultsToHtml(results: any[], sql: string, durationMs: number):
 }
 
 /* ============================
+   ソースパネル（LEFT）
+   ============================ */
+const SOURCE_ICON_MAP: Record<string, { icon: React.ReactNode; color: string }> = {
+  pdf:  { icon: <FileText size={16} />,        color: "#ea4335" },
+  docx: { icon: <FileText size={16} />,        color: "#4285f4" },
+  xlsx: { icon: <FileSpreadsheet size={16} />, color: "#34a853" },
+  pptx: { icon: <Presentation size={16} />,    color: "#f59e0b" },
+  txt:  { icon: <FileType size={16} />,        color: "#ababab" },
+  memo: { icon: <StickyNote size={16} />,      color: "#fbbf24" },
+};
+
+function SourcePanel({
+  sources,
+  mode,
+  onModeChange,
+  onToggleSelected,
+  onDelete,
+  onUpload,
+  memoOpen,
+  onMemoOpenToggle,
+  memoTitle,
+  memoContent,
+  onMemoTitleChange,
+  onMemoContentChange,
+  onMemoSubmit,
+}: {
+  sources: Source[];
+  mode: ReferenceMode;
+  onModeChange: (m: ReferenceMode) => void;
+  onToggleSelected: (id: number, selected: boolean) => void;
+  onDelete: (id: number) => void;
+  onUpload: (file: File) => void;
+  memoOpen: boolean;
+  onMemoOpenToggle: () => void;
+  memoTitle: string;
+  memoContent: string;
+  onMemoTitleChange: (v: string) => void;
+  onMemoContentChange: (v: string) => void;
+  onMemoSubmit: () => void;
+}) {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  return (
+    <aside style={{
+      width: 280, flexShrink: 0, display: "flex", flexDirection: "column",
+      borderRight: "1px solid rgba(255,255,255,0.08)", overflow: "hidden",
+      background: "var(--bg-sidebar)",
+    }}>
+      <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 14, overflow: "hidden", flex: 1, minHeight: 0 }}>
+
+        {/* ソース追加 */}
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".pdf,.docx,.xlsx,.pptx,.txt"
+          style={{ display: "none" }}
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) onUpload(f);
+            e.target.value = "";
+          }}
+        />
+        <button className="panel-action-btn" onClick={() => fileInputRef.current?.click()}>
+          <Plus size={16} /> ソースを追加
+        </button>
+
+        {/* 参照モード切替 */}
+        <div style={{
+          display: "flex", flexDirection: "column", gap: 6, padding: "10px 4px",
+          borderTop: "1px solid rgba(255,255,255,0.06)", borderBottom: "1px solid rgba(255,255,255,0.06)",
+        }}>
+          <label className="mode-radio-row">
+            <input type="radio" name="ref-mode" checked={mode === "auto"} onChange={() => onModeChange("auto")} />
+            <span>自動参照モード</span>
+          </label>
+          <label className="mode-radio-row">
+            <input type="radio" name="ref-mode" checked={mode === "manual"} onChange={() => onModeChange("manual")} />
+            <span>手動参照モード</span>
+          </label>
+          {mode === "auto" ? (
+            <div className="auto-search-badge"><Search size={11} /> 自動検索中...（PC内・ファイルサーバ・WEB）</div>
+          ) : (
+            <div style={{ fontSize: 11, color: "#6e6e6e", padding: "0 4px" }}>チェックしたソースのみ参照されます</div>
+          )}
+        </div>
+
+        {/* ソース一覧 */}
+        <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", gap: 2, minHeight: 0 }}>
+          {sources.length === 0 && (
+            <p style={{ fontSize: 12, color: "#6e6e6e", padding: "8px 4px" }}>まだソースがありません。</p>
+          )}
+          {sources.map((s) => {
+            const cfg = SOURCE_ICON_MAP[s.type] ?? SOURCE_ICON_MAP.txt;
+            const checked = mode === "auto" ? true : s.selected;
+            return (
+              <div key={s.id} className="source-row">
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  disabled={mode === "auto"}
+                  onChange={(e) => onToggleSelected(s.id, e.target.checked)}
+                  style={{ opacity: mode === "auto" ? 0.5 : 1 }}
+                />
+                <span style={{ color: cfg.color, display: "flex", flexShrink: 0 }}>{cfg.icon}</span>
+                <span className="source-row-name" title={s.name}>{s.name}</span>
+                <button className="source-row-delete" onClick={() => onDelete(s.id)} title="削除">
+                  <Trash2 size={13} />
+                </button>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* メモを追加 */}
+        <div style={{ borderTop: "1px solid rgba(255,255,255,0.06)", paddingTop: 12, flexShrink: 0 }}>
+          <button className="panel-action-btn secondary" onClick={onMemoOpenToggle}>
+            <NotebookPen size={16} /> メモを追加
+          </button>
+          <AnimatePresence initial={false}>
+            {memoOpen && (
+              <motion.div
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: "auto", opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                transition={{ duration: 0.2 }}
+                style={{ overflow: "hidden" }}
+              >
+                <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 10 }}>
+                  <input
+                    className="memo-input"
+                    placeholder="メモのタイトル"
+                    value={memoTitle}
+                    onChange={(e) => onMemoTitleChange(e.target.value)}
+                  />
+                  <textarea
+                    className="memo-textarea"
+                    placeholder="メモの内容"
+                    rows={4}
+                    value={memoContent}
+                    onChange={(e) => onMemoContentChange(e.target.value)}
+                  />
+                  <button
+                    className="panel-action-btn primary"
+                    disabled={!memoTitle.trim() || !memoContent.trim()}
+                    onClick={onMemoSubmit}
+                  >
+                    ソースに変換
+                  </button>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+      </div>
+    </aside>
+  );
+}
+
+/* ============================
+   Studioパネル（RIGHT）
+   ============================ */
+const PRESETS: { key: string; icon: React.ReactNode; label: string; prompt: string }[] = [
+  { key: "report", icon: <BarChart3 size={20} />, label: "レポート", prompt: "現在のソースをもとに詳細な報告書(レポート)を生成してください。" },
+  { key: "slides", icon: <Presentation size={20} />, label: "スライド資料", prompt: "現在の内容をPowerPoint形式のスライドにまとめてください。" },
+  { key: "audio", icon: <Mic size={20} />, label: "音声解説", prompt: "現在のソースの内容を音声解説用のナレーションスクリプトとして作成してください。" },
+  { key: "mindmap", icon: <MapIcon size={20} />, label: "マインドマップ", prompt: "現在のソースの内容を見出しと階層構造を使ったマインドマップ形式で整理してください。" },
+  { key: "summary", icon: <ClipboardList size={20} />, label: "要約", prompt: "現在のソースの内容を簡潔に要約してください。" },
+  { key: "quiz", icon: <CircleHelp size={20} />, label: "クイズ", prompt: "現在のソースの内容から理解度を確認するクイズを5問作成してください。" },
+  { key: "infographic", icon: <TrendingUp size={20} />, label: "インフォグラフィ", prompt: "現在のソースの内容を視覚的に把握しやすいインフォグラフィ風の構成で説明してください。" },
+  { key: "datatable", icon: <Table2 size={20} />, label: "データ表", prompt: "現在のソースの内容を表形式に整理してまとめてください。" },
+];
+
+function OutputFileRow({ file }: { file: OutputFile }) {
+  const cfg = (file.type && {
+    excel: { icon: <FileSpreadsheet size={16} />, color: "#34a853" },
+    word: { icon: <FileText size={16} />, color: "#4285f4" },
+    powerpoint: { icon: <Presentation size={16} />, color: "#ea4335" },
+  }[file.type]) ?? { icon: <FileText size={16} />, color: "#ababab" };
+
+  return (
+    <div className="output-file-row">
+      <span style={{ color: cfg.color, display: "flex", flexShrink: 0 }}>{cfg.icon}</span>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div className="output-file-name">{file.filename}</div>
+        <div className="output-file-size">{file.size}</div>
+      </div>
+      <a href={file.downloadUrl} download className="output-file-dl" title="ダウンロード">
+        <Download size={14} />
+      </a>
+    </div>
+  );
+}
+
+function StudioPanel({
+  tab,
+  onTabChange,
+  onPreset,
+  outputFiles,
+  draftTitle,
+  draftContent,
+  onDraftTitleChange,
+  onDraftContentChange,
+  drafts,
+  onSelectDraft,
+  onConvertDraft,
+  onNewDraft,
+}: {
+  tab: StudioTab;
+  onTabChange: (t: StudioTab) => void;
+  onPreset: (prompt: string) => void;
+  outputFiles: OutputFile[];
+  draftTitle: string;
+  draftContent: string;
+  onDraftTitleChange: (v: string) => void;
+  onDraftContentChange: (v: string) => void;
+  drafts: MemoDraft[];
+  onSelectDraft: (d: MemoDraft) => void;
+  onConvertDraft: () => void;
+  onNewDraft: () => void;
+}) {
+  return (
+    <aside style={{
+      width: 320, flexShrink: 0, display: "flex", flexDirection: "column",
+      borderLeft: "1px solid rgba(255,255,255,0.08)", background: "var(--bg-sidebar)", overflow: "hidden",
+    }}>
+      <div style={{ display: "flex", borderBottom: "1px solid rgba(255,255,255,0.08)", flexShrink: 0 }}>
+        <button className={`tab-btn${tab === "studio" ? " active" : ""}`} onClick={() => onTabChange("studio")}>Studio</button>
+        <button className={`tab-btn${tab === "memo" ? " active" : ""}`} onClick={() => onTabChange("memo")}>メモ</button>
+      </div>
+
+      <div style={{ flex: 1, overflowY: "auto", padding: 16, minHeight: 0 }}>
+        {tab === "studio" ? (
+          <>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 10, marginBottom: 22 }}>
+              {PRESETS.map((p) => (
+                <button key={p.key} className="preset-card" onClick={() => onPreset(p.prompt)}>
+                  <span style={{ color: "#8ab4f8" }}>{p.icon}</span>
+                  <span>{p.label}</span>
+                </button>
+              ))}
+            </div>
+
+            <div style={{ fontSize: 12, fontWeight: 600, color: "#6e6e6e", marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.3px" }}>
+              出力ファイル
+            </div>
+            {outputFiles.length === 0 ? (
+              <p style={{ fontSize: 12, color: "#6e6e6e" }}>まだ生成されたファイルはありません。</p>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {outputFiles.map((f) => (
+                  <OutputFileRow key={f.id} file={f} />
+                ))}
+              </div>
+            )}
+          </>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            <input
+              className="memo-input"
+              placeholder="メモタイトル"
+              value={draftTitle}
+              onChange={(e) => onDraftTitleChange(e.target.value)}
+            />
+            <textarea
+              className="memo-textarea"
+              placeholder="メモ本文"
+              rows={8}
+              value={draftContent}
+              onChange={(e) => onDraftContentChange(e.target.value)}
+            />
+            <div style={{ display: "flex", gap: 8 }}>
+              <button className="panel-action-btn secondary" style={{ flex: 1 }} onClick={onNewDraft}>新規</button>
+              <button
+                className="panel-action-btn primary"
+                style={{ flex: 1 }}
+                disabled={!draftTitle.trim() || !draftContent.trim()}
+                onClick={onConvertDraft}
+              >
+                ソースに変換
+              </button>
+            </div>
+
+            <div style={{ fontSize: 12, fontWeight: 600, color: "#6e6e6e", marginTop: 12, marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.3px" }}>
+              保存済みメモ
+            </div>
+            {drafts.length === 0 ? (
+              <p style={{ fontSize: 12, color: "#6e6e6e" }}>メモはまだありません。</p>
+            ) : (
+              drafts.map((d) => (
+                <div key={d.id} className="draft-row" onClick={() => onSelectDraft(d)}>
+                  <StickyNote size={13} style={{ color: "#fbbf24", flexShrink: 0 }} />
+                  <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.title}</span>
+                </div>
+              ))
+            )}
+          </div>
+        )}
+      </div>
+    </aside>
+  );
+}
+
+/* ============================
    メインページ
    ============================ */
 export default function Page() {
@@ -634,24 +834,143 @@ export default function Page() {
   const [input, setInput]       = useState("");
   const [role, setRole]         = useState<UserRole>("admin");
   const [demoMode, setDemoMode] = useState(false);
-  const [sidebarOpen, setSidebar] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [thinkingLabel, setThinkingLabel] = useState("");
-  const [history, setHistory]   = useState<HistoryItem[]>(initialHistory);
-  const [currentId, setCurrentId] = useState<string | null>(null);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [attachedFile, setAttachedFile] = useState<File | null>(null);
+  const [sessionId, setSessionId] = useState(() => Date.now().toString());
   const bottomRef = useRef<HTMLDivElement>(null);
+
+  // ソースパネル
+  const [sources, setSources] = useState<Source[]>([]);
+  const [refMode, setRefMode] = useState<ReferenceMode>("auto");
+  const [memoOpen, setMemoOpen] = useState(false);
+  const [memoTitle, setMemoTitle] = useState("");
+  const [memoContent, setMemoContent] = useState("");
+
+  // Studioパネル
+  const [studioTab, setStudioTab] = useState<StudioTab>("studio");
+  const [outputFiles, setOutputFiles] = useState<OutputFile[]>([]);
+  const [drafts, setDrafts] = useState<MemoDraft[]>([]);
+  const [draftTitle, setDraftTitle] = useState("");
+  const [draftContent, setDraftContent] = useState("");
+  const [editingDraftId, setEditingDraftId] = useState<string | null>(null);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, generating, thinkingLabel]);
 
+  /* ---- ソース一覧の取得・自動リフレッシュ ---- */
+  const fetchSources = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/sources/`);
+      if (!res.ok) return;
+      const data = await res.json();
+      setSources(data.sources ?? []);
+    } catch (e) {
+      console.error("ソース一覧取得エラー:", e);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!isLoggedIn) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- 初回マウント時のソース一覧フェッチ
+    fetchSources();
+    const interval = setInterval(fetchSources, 8000);
+    return () => clearInterval(interval);
+  }, [isLoggedIn, fetchSources]);
+
+  const handleUploadSource = useCallback(async (file: File) => {
+    const formData = new FormData();
+    formData.append("file", file);
+    try {
+      const res = await fetch(`${API_BASE}/api/sources/upload`, { method: "POST", body: formData });
+      if (!res.ok) {
+        console.error("ソースアップロード失敗:", res.status);
+        return;
+      }
+      await fetchSources();
+    } catch (e) {
+      console.error("ソースアップロードエラー:", e);
+    }
+  }, [fetchSources]);
+
+  const handleToggleSelected = useCallback(async (id: number, selected: boolean) => {
+    setSources((prev) => prev.map((s) => (s.id === id ? { ...s, selected } : s)));
+    try {
+      await fetch(`${API_BASE}/api/sources/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ selected }),
+      });
+    } catch (e) {
+      console.error("選択状態更新エラー:", e);
+    }
+  }, []);
+
+  const handleDeleteSource = useCallback(async (id: number) => {
+    setSources((prev) => prev.filter((s) => s.id !== id));
+    try {
+      await fetch(`${API_BASE}/api/sources/${id}`, { method: "DELETE" });
+    } catch (e) {
+      console.error("ソース削除エラー:", e);
+    }
+  }, []);
+
+  const createMemoSource = useCallback(async (title: string, content: string) => {
+    if (!title.trim() || !content.trim()) return false;
+    try {
+      const res = await fetch(`${API_BASE}/api/sources/memo`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title, content }),
+      });
+      if (!res.ok) return false;
+      await fetchSources();
+      return true;
+    } catch (e) {
+      console.error("メモソース作成エラー:", e);
+      return false;
+    }
+  }, [fetchSources]);
+
+  const handleQuickMemoSubmit = useCallback(async () => {
+    const ok = await createMemoSource(memoTitle, memoContent);
+    if (ok) {
+      setMemoTitle("");
+      setMemoContent("");
+      setMemoOpen(false);
+    }
+  }, [memoTitle, memoContent, createMemoSource]);
+
+  const handleConvertDraftToSource = useCallback(async () => {
+    const ok = await createMemoSource(draftTitle, draftContent);
+    if (ok) {
+      setDrafts((prev) => prev.filter((d) => d.id !== editingDraftId));
+      setDraftTitle("");
+      setDraftContent("");
+      setEditingDraftId(null);
+    }
+  }, [draftTitle, draftContent, editingDraftId, createMemoSource]);
+
+  const handleSaveMessageToMemo = useCallback((content: string) => {
+    const id = Date.now().toString();
+    const title = content.slice(0, 24) + (content.length > 24 ? "…" : "");
+    setDrafts((prev) => [{ id, title, content }, ...prev]);
+    setDraftTitle(title);
+    setDraftContent(content);
+    setEditingDraftId(id);
+    setStudioTab("memo");
+  }, []);
+
+  const handleFeedback = useCallback((id: string, value: "up" | "down") => {
+    setMessages((prev) => prev.map((m) => (m.id === id ? { ...m, feedback: m.feedback === value ? undefined : value } : m)));
+  }, []);
+
   const handleSend = useCallback(async (text?: string) => {
     const content = (text ?? input).trim();
     const hasPdf = !!attachedFile;
 
-    // PDFも入力テキストもない場合はスキップ
     if (!content && !hasPdf) return;
     if (generating) return;
 
@@ -670,19 +989,6 @@ export default function Page() {
     setAttachedFile(null);
     setGenerating(true);
 
-    const sessionId = currentId || Date.now().toString();
-
-    // 初回メッセージ時に履歴追加
-    if (messages.length === 0) {
-      setCurrentId(sessionId);
-      setHistory((p) => [
-        { id: sessionId, title: displayContent.slice(0, 22) + (displayContent.length > 22 ? "…" : ""), timestamp: new Date() },
-        ...p,
-      ]);
-    }
-
-    const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
-
     // ===== デモモードがONの場合は、従来通りモックデータを返す =====
     if (demoMode) {
       if (capturedFile) {
@@ -698,7 +1004,6 @@ export default function Page() {
         }
         setThinkingLabel("");
 
-        // デモ用モックダッシュボードを表示
         const mockHtml = `
           <div style="font-family: sans-serif; color: #fff; background: #1e1e24; padding: 20px; border-radius: 12px;">
             <h3 style="margin-top: 0; color: #8ab4f8;">📊 損益比較分析ダッシュボード (DEMO)</h3>
@@ -760,7 +1065,7 @@ export default function Page() {
         formData.append("prompt", content || "財務諸表を詳しく分析し、売上利益の推移と改善策をまとめてください。");
         formData.append("session_id", sessionId);
 
-        const res = await fetch(`${apiBase}/api/chat/analyze-pdf`, {
+        const res = await fetch(`${API_BASE}/api/chat/analyze-pdf`, {
           method: "POST",
           body: formData,
         });
@@ -770,7 +1075,7 @@ export default function Page() {
         }
 
         const data = await res.json();
-        
+
         setMessages((p) => [
           ...p,
           {
@@ -781,7 +1086,7 @@ export default function Page() {
             timestamp: new Date(),
           },
         ]);
-        
+
         setThinkingLabel("");
         setGenerating(false);
         return;
@@ -790,7 +1095,7 @@ export default function Page() {
       // 2. PDFなし：通常のチャット対話RAG API / 文書生成APIの呼び出し
       let detectedDocType: "excel" | "word" | "powerpoint" | null = null;
       let apiDocType: "excel" | "word" | "pptx" | null = null;
-      
+
       const lowerContent = content.toLowerCase();
       if (lowerContent.includes("excel") || lowerContent.includes("見積")) {
         detectedDocType = "excel";
@@ -805,11 +1110,10 @@ export default function Page() {
 
       let fileChipData = undefined;
 
-      // 文書生成APIを呼び出し
       if (apiDocType) {
         setThinkingLabel(`${apiDocType.toUpperCase()}ファイルを自動作成中...`);
         try {
-          const resDoc = await fetch(`${apiBase}/api/documents/generate`, {
+          const resDoc = await fetch(`${API_BASE}/api/documents/generate`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -824,13 +1128,15 @@ export default function Page() {
             const downloadUrl = URL.createObjectURL(blob);
             const extMap = { excel: "xlsx", word: "docx", pptx: "pptx" };
             const filename = `AVITO_${apiDocType}_${Date.now().toString().slice(-4)}.${extMap[apiDocType]}`;
-            
+
             fileChipData = {
               type: detectedDocType,
               filename: filename,
               size: `${Math.round(blob.size / 1024)} KB`,
               downloadUrl: downloadUrl,
             };
+
+            setOutputFiles((prev) => [{ id: Date.now().toString(), ...fileChipData! }, ...prev]);
           }
         } catch (err) {
           console.error("文書自動生成エラー:", err);
@@ -844,7 +1150,7 @@ export default function Page() {
       if (isDbQuery) {
         setThinkingLabel("データベースを解析中 (NL2SQL)...");
         try {
-          const resDb = await fetch(`${apiBase}/api/db/query`, {
+          const resDb = await fetch(`${API_BASE}/api/db/query`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -890,14 +1196,13 @@ export default function Page() {
           return;
         } catch (err) {
           console.error("DB連携API接続エラー:", err);
-          // エラー時は通常のRAGにフォールバックさせず、エラー通知として処理を終える
         }
       }
 
       // チャット対話RAG APIの呼び出し
       setThinkingLabel("社内ナレッジをRAG検索中...");
-      
-      const resChat = await fetch(`${apiBase}/api/chat/`, {
+
+      const resChat = await fetch(`${API_BASE}/api/chat/`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -912,19 +1217,15 @@ export default function Page() {
       }
 
       const data = await resChat.json();
-      
-      // 出典元の整理
-      const sourcesText = data.sources && data.sources.length > 0 
-        ? "\n\n**【参照ドキュメント】**\n" + data.sources.map((s: any) => `📄 ${s.file_name || s.doc_id}`).join("\n")
-        : "";
 
       setMessages((p) => [
         ...p,
         {
           id: (Date.now() + 1).toString(),
           role: "assistant",
-          content: data.answer + sourcesText,
+          content: data.answer,
           fileChip: fileChipData,
+          citations: data.sources && data.sources.length > 0 ? data.sources : undefined,
           timestamp: new Date(),
         },
       ]);
@@ -944,13 +1245,13 @@ export default function Page() {
 
     setThinkingLabel("");
     setGenerating(false);
-  }, [input, generating, messages.length, role, attachedFile, demoMode, currentId]);
+  }, [input, generating, role, attachedFile, demoMode, sessionId]);
 
   const handleNewChat = () => {
     setMessages([]);
     setInput("");
-    setCurrentId(null);
     setAttachedFile(null);
+    setSessionId(Date.now().toString());
   };
 
   if (!isLoggedIn) {
@@ -958,189 +1259,117 @@ export default function Page() {
   }
 
   return (
-    <div style={{ display: "flex", height: "100vh", width: "100vw", background: "var(--bg-base)", overflow: "hidden" }}>
+    <div style={{ height: "100vh", width: "100vw", display: "flex", flexDirection: "column", background: "var(--bg-base)", overflow: "hidden" }}>
 
-      {/* ===== サイドバー ===== */}
-      <Sidebar
-        open={sidebarOpen}
-        history={history}
-        currentId={currentId}
-        onNewChat={handleNewChat}
-        onSelectHistory={(id) => setCurrentId(id)}
-      />
-
-      {/* ===== メインカラム ===== */}
-      <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0, overflow: "hidden" }}>
-
-        {/* ===== ヘッダー ===== */}
-        <header style={{
-          height: 56,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          padding: "0 16px",
-          flexShrink: 0,
-          borderBottom: "1px solid rgba(255,255,255,0.06)",
-        }}>
-          {/* 左: トグル + モデル名 */}
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <motion.button
-              whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }}
-              onClick={() => setSidebar((v) => !v)}
-              style={{
-                width: 40, height: 40, borderRadius: "50%",
-                display: "flex", alignItems: "center", justifyContent: "center",
-                background: "transparent", border: "none", cursor: "pointer",
-              }}
-            >
-              {sidebarOpen
-                ? <PanelLeftClose size={20} style={{ color: "#ababab" }} />
-                : <PanelLeftOpen  size={20} style={{ color: "#ababab" }} />}
-            </motion.button>
-
-            {/* モデルセレクタ */}
-            <button className="model-selector">
-              <span style={{ fontWeight: 600, fontSize: 14 }}>AVITO v2.0</span>
-              <ChevronDown size={16} style={{ color: "#ababab" }} />
-            </button>
-          </div>
-
-          {/* 右: トグル類 */}
-          <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-            <DemoToggle demoMode={demoMode} onToggle={() => setDemoMode(!demoMode)} />
-            <RoleToggle 
-              role={role} 
-              onToggle={() => {
-                setRole(role === "admin" ? "user" : "admin");
-                handleNewChat(); // 権限切り替え時にチャットをリセット
-              }} 
-            />
-          </div>
-        </header>
-
-        {/* ===== チャット or ウェルカム ===== */}
-        <div
-          className="chat-scroll"
-          style={{ display: "flex", flexDirection: "column" }}
-        >
-          {messages.length === 0 && !generating ? (
-            <WelcomeView onPrompt={(p) => handleSend(p)} />
-          ) : (
-            <div style={{ maxWidth: 720, width: "100%", margin: "0 auto", padding: "32px 24px 0" }}>
-              <AnimatePresence>
-                {messages.map((msg) => (
-                  <MessageBubble key={msg.id} message={msg} />
-                ))}
-              </AnimatePresence>
-              <AnimatePresence>
-                {generating && <GeneratingIndicator label={thinkingLabel} />}
-              </AnimatePresence>
-              <div ref={bottomRef} style={{ height: 180 }} />
-            </div>
-          )}
+      {/* ===== ヘッダー ===== */}
+      <header style={{
+        height: 56,
+        flexShrink: 0,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        padding: "0 16px",
+        borderBottom: "1px solid rgba(255,255,255,0.08)",
+      }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <GeniusLogo size={26} />
+          <span style={{ fontWeight: 700, fontSize: 16, color: "#8ab4f8", letterSpacing: "0.5px" }}>AVITO</span>
         </div>
 
-      {/* ===== 入力エリア (チャット中は固定) ===== */}
-        {messages.length > 0 || generating ? (
-          <div style={{
-            position: "sticky",
-            bottom: 0,
-            background: "var(--bg-base)",
-            padding: "12px 0 20px",
-            flexShrink: 0,
-          }}>
-            <div style={{ maxWidth: 720, margin: "0 auto", padding: "0 24px" }}>
-              <AnimatePresence>
-                {attachedFile && (
-                  <AttachedFileBadge name={attachedFile.name} onRemove={() => setAttachedFile(null)} />
-                )}
-              </AnimatePresence>
-              <div className="input-wrapper" style={{ padding: "12px 16px" }}>
-                <textarea
-                  value={input}
-                  onChange={(e) => {
-                    setInput(e.target.value);
-                    e.target.style.height = "auto";
-                    e.target.style.height = Math.min(e.target.scrollHeight, 160) + "px";
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && !e.shiftKey) {
-                      e.preventDefault();
-                      handleSend();
-                    }
-                  }}
-                  placeholder={attachedFile ? "PDFについて質問する（空欄でも分析開始）" : "フォローアップ of 質問を入力..."}
-                  rows={1}
-                  style={{
-                    width: "100%", background: "transparent", border: "none",
-                    outline: "none", resize: "none", color: "#e3e3e3",
-                    fontSize: 15, lineHeight: "1.6", maxHeight: 160,
-                    overflowY: "auto", display: "block", marginBottom: 10,
-                  }}
-                />
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <div style={{ display: "flex", gap: 4 }}>
-                    {/* PDF添付ボタン */}
-                    <input
-                      type="file" accept=".pdf" style={{ display: "none" }}
-                      id="chat-file-input"
-                      onChange={(e) => {
-                        const f = e.target.files?.[0];
-                        if (f) setAttachedFile(f);
-                        e.target.value = "";
-                      }}
+        <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+          <DemoToggle demoMode={demoMode} onToggle={() => setDemoMode((v) => !v)} />
+          <RoleToggle
+            role={role}
+            onToggle={() => {
+              setRole((r) => (r === "admin" ? "user" : "admin"));
+              handleNewChat();
+            }}
+          />
+        </div>
+      </header>
+
+      {/* ===== 3カラム ===== */}
+      <div style={{ flex: 1, display: "flex", minHeight: 0, overflow: "hidden" }}>
+
+        {/* LEFT: ソースパネル */}
+        <SourcePanel
+          sources={sources}
+          mode={refMode}
+          onModeChange={setRefMode}
+          onToggleSelected={handleToggleSelected}
+          onDelete={handleDeleteSource}
+          onUpload={handleUploadSource}
+          memoOpen={memoOpen}
+          onMemoOpenToggle={() => setMemoOpen((v) => !v)}
+          memoTitle={memoTitle}
+          memoContent={memoContent}
+          onMemoTitleChange={setMemoTitle}
+          onMemoContentChange={setMemoContent}
+          onMemoSubmit={handleQuickMemoSubmit}
+        />
+
+        {/* CENTER: チャットパネル */}
+        <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0, overflow: "hidden" }}>
+          <div className="chat-scroll" style={{ display: "flex", flexDirection: "column" }}>
+            {messages.length === 0 && !generating ? (
+              <WelcomeView onPrompt={(p) => handleSend(p)} />
+            ) : (
+              <div style={{ maxWidth: 720, width: "100%", margin: "0 auto", padding: "32px 24px 0" }}>
+                <AnimatePresence>
+                  {messages.map((msg) => (
+                    <MessageBubble
+                      key={msg.id}
+                      message={msg}
+                      onSaveMemo={handleSaveMessageToMemo}
+                      onFeedback={handleFeedback}
                     />
-                    <motion.button whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }}
-                      onClick={() => document.getElementById("chat-file-input")?.click()}
-                      style={{
-                        width: 36, height: 36, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center",
-                        background: attachedFile ? "rgba(138,180,248,0.15)" : "transparent", border: "none", cursor: "pointer",
-                      }}
-                      title="PDFを添付"
-                    >
-                      <Paperclip size={18} style={{ color: attachedFile ? "#8ab4f8" : "#ababab" }} />
-                    </motion.button>
-                    <motion.button whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }}
-                      style={{ width: 36, height: 36, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", background: "transparent", border: "none", cursor: "pointer" }}>
-                      <Mic size={18} style={{ color: "#ababab" }} />
-                    </motion.button>
-                  </div>
-                  <motion.button
-                    onClick={() => handleSend()}
-                    disabled={(!input.trim() && !attachedFile) || generating}
-                    whileHover={(input.trim() || attachedFile) && !generating ? { scale: 1.08 } : {}}
-                    whileTap={(input.trim() || attachedFile) && !generating ? { scale: 0.92 } : {}}
-                    style={{
-                      width: 36, height: 36, borderRadius: "50%",
-                      display: "flex", alignItems: "center", justifyContent: "center",
-                      background: (input.trim() || attachedFile) && !generating ? "linear-gradient(135deg,#4285f4,#9b59b6)" : "rgba(255,255,255,0.08)",
-                      border: "none", cursor: (input.trim() || attachedFile) && !generating ? "pointer" : "not-allowed",
-                      transition: "background 0.2s",
-                    }}
-                  >
-                    <Send size={16} style={{ color: (input.trim() || attachedFile) && !generating ? "white" : "#6e6e6e" }} />
-                  </motion.button>
-                </div>
+                  ))}
+                </AnimatePresence>
+                <AnimatePresence>
+                  {generating && <GeneratingIndicator label={thinkingLabel} />}
+                </AnimatePresence>
+                {!generating && messages.length > 0 && messages[messages.length - 1].role === "assistant" && (
+                  <SuggestedPrompts onPick={(p) => handleSend(p)} />
+                )}
+                <div ref={bottomRef} style={{ height: 8 }} />
               </div>
-              <p style={{ textAlign: "center", fontSize: 12, color: "#4b4b4b", marginTop: 8 }}>
-                本システムは RAG基盤で社内ナレッジ847件を参照しています
-              </p>
-            </div>
+            )}
           </div>
-        ) : (
-          /* ウェルカム時の入力エリア */
-          <div style={{ flexShrink: 0 }}>
-            <InputArea
-              value={input}
-              onChange={setInput}
-              onSend={handleSend}
-              disabled={generating}
-              attachedFile={attachedFile}
-              onAttachFile={setAttachedFile}
-              onRemoveFile={() => setAttachedFile(null)}
-            />
-          </div>
-        )}
+
+          <ChatInputBar
+            value={input}
+            onChange={setInput}
+            onSend={handleSend}
+            disabled={generating}
+            attachedFile={attachedFile}
+            onAttachFile={setAttachedFile}
+            onRemoveFile={() => setAttachedFile(null)}
+          />
+        </div>
+
+        {/* RIGHT: Studioパネル */}
+        <StudioPanel
+          tab={studioTab}
+          onTabChange={setStudioTab}
+          onPreset={(p) => handleSend(p)}
+          outputFiles={outputFiles}
+          draftTitle={draftTitle}
+          draftContent={draftContent}
+          onDraftTitleChange={setDraftTitle}
+          onDraftContentChange={setDraftContent}
+          drafts={drafts}
+          onSelectDraft={(d) => {
+            setDraftTitle(d.title);
+            setDraftContent(d.content);
+            setEditingDraftId(d.id);
+          }}
+          onConvertDraft={handleConvertDraftToSource}
+          onNewDraft={() => {
+            setDraftTitle("");
+            setDraftContent("");
+            setEditingDraftId(null);
+          }}
+        />
       </div>
     </div>
   );

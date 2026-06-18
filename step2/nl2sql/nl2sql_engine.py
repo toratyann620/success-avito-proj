@@ -12,7 +12,7 @@ from step2.schema_catalog.catalog_manager import catalog_manager
 from step2.audit_log.audit_service import audit_service
 
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://ollama:11434")
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "gemma3:4b")
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5-coder:1.5b")
 OLLAMA_TIMEOUT = int(os.getenv("OLLAMA_TIMEOUT", "300"))
 
 # SQLite読み取り専用接続用のURI設定
@@ -58,7 +58,7 @@ class NL2SQLEngine:
         return True, ""
 
     async def generate_sql(self, user_query: str) -> str:
-        """ユーザーの自然言語質問からSQLを自動生成する (Gemma3)"""
+        """ユーザーの自然言語質問からSQLを自動生成する (ローカルLLM / OLLAMA_MODEL)"""
         logger.info(f"NL2SQL生成開始: {user_query}")
         
         # 業務カタログからスキーマコンテキストを取得

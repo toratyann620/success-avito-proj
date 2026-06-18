@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   FileSpreadsheet, FileText, Presentation,
-  Download, Lock, ChevronRight, BadgeCheck, FileUp,
+  Download, Lock, ChevronRight, FileUp,
+  Copy, Check, ThumbsUp, ThumbsDown, NotebookPen,
 } from "lucide-react";
 import type { Message, BulletItem, TableData } from "@/app/lib/mockData";
 
@@ -352,8 +353,77 @@ export function GeneratingIndicator({ label }: { label?: string }) {
   );
 }
 
+/* -------- 出典チップ -------- */
+function CitationChips({ citations }: { citations: NonNullable<Message["citations"]> }) {
+  return (
+    <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 12 }}>
+      {citations.map((c, i) => (
+        <span key={i} className="source-chip" title={c.snippet || ""}>
+          <FileText size={11} /> {c.file_name || c.doc_id || "出典"}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+/* -------- メッセージアクション（コピー・メモ保存・評価） -------- */
+function MessageActions({
+  message,
+  onSaveMemo,
+  onFeedback,
+}: {
+  message: Message;
+  onSaveMemo?: (content: string) => void;
+  onFeedback?: (id: string, value: "up" | "down") => void;
+}) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(message.content);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch (e) {
+      console.error("コピーに失敗しました:", e);
+    }
+  };
+
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 12 }}>
+      <button className="msg-action-btn" onClick={() => onSaveMemo?.(message.content)} title="メモに保存">
+        <NotebookPen size={14} /> メモに保存
+      </button>
+      <button className="msg-action-btn icon-only" onClick={handleCopy} title="コピー">
+        {copied ? <Check size={14} /> : <Copy size={14} />}
+      </button>
+      <button
+        className={`msg-action-btn icon-only${message.feedback === "up" ? " active" : ""}`}
+        onClick={() => onFeedback?.(message.id, "up")}
+        title="役に立った"
+      >
+        <ThumbsUp size={14} />
+      </button>
+      <button
+        className={`msg-action-btn icon-only${message.feedback === "down" ? " active" : ""}`}
+        onClick={() => onFeedback?.(message.id, "down")}
+        title="役に立たなかった"
+      >
+        <ThumbsDown size={14} />
+      </button>
+    </div>
+  );
+}
+
 /* -------- メッセージバブル -------- */
-export function MessageBubble({ message }: { message: Message }) {
+export function MessageBubble({
+  message,
+  onSaveMemo,
+  onFeedback,
+}: {
+  message: Message;
+  onSaveMemo?: (content: string) => void;
+  onFeedback?: (id: string, value: "up" | "down") => void;
+}) {
   if (message.role === "user") {
     return (
       <motion.div
@@ -412,18 +482,14 @@ export function MessageBubble({ message }: { message: Message }) {
         {/* ファイルカード */}
         {message.fileChip && <FileCard fileChip={message.fileChip} />}
 
-        {/* RAG引用チップ */}
+        {/* RAG出典チップ（実データ） */}
+        {message.citations && message.citations.length > 0 && (
+          <CitationChips citations={message.citations} />
+        )}
+
+        {/* アクション行 */}
         {!message.isRestricted && (
-          <motion.div
-            initial={{ opacity: 0 }} animate={{ opacity: 1 }}
-            transition={{ delay: 1 }}
-            style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12 }}
-          >
-            <BadgeCheck size={13} style={{ color: "#8ab4f8" }} />
-            <span style={{ color: "#6e6e6e", fontSize: 12 }}>RAG検索完了</span>
-            <span className="source-chip">社内DB</span>
-            <span className="source-chip">847件参照</span>
-          </motion.div>
+          <MessageActions message={message} onSaveMemo={onSaveMemo} onFeedback={onFeedback} />
         )}
       </div>
     </motion.div>

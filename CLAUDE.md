@@ -145,6 +145,13 @@ SQLITE_DB_PATH=/data/sqlite/knowledge.db
 - 現在の動作モデルは `qwen2.5-coder:1.5b`（約986MB）。
 - Ollama の payload options に `"num_predict": 150` を付与し、無限トークン生成ループを防止している。
 
+### 📌 RAGの実装実態（提案書との差分）
+- 提案書では Open Notebook を RAG 中核としていたが、現行実装の RAG は
+  自前の SQLite FTS5（app/api/services/db.py + rag_engine.py）で完結している。
+- docker-compose の open-notebook コンテナは現状どのコードからも参照されていない。
+  将来 Open Notebook をRAG基盤に切り替える場合は、rag_engine.py の検索層を
+  差し替える設計とすること。
+
 ### 🔒 セキュリティ設計（変更禁止）
 NL2SQL の安全性は以下の **二重防御**で担保しており、絶対に緩和しないこと：
 1. **物理防御**: DB接続URIに `?mode=ro` を付与 → SQLiteが書き込みを物理的に拒否

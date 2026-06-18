@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from loguru import logger
 
-from routers import chat, documents, search, voice, db_query
+from routers import chat, documents, search, voice, db_query, sources
 from services.db import init_db
 
 
@@ -54,6 +54,7 @@ app.include_router(documents.router, prefix="/api/documents", tags=["文書生�
 app.include_router(search.router, prefix="/api/search", tags=["検索"])
 app.include_router(voice.router, prefix="/api/voice", tags=["音声認識"])
 app.include_router(db_query.router, prefix="/api/db", tags=["データベース連携"])
+app.include_router(sources.router, prefix="/api/sources", tags=["ソース管理"])
 
 
 @app.get("/health")

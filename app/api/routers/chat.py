@@ -17,11 +17,13 @@ class ChatRequest(BaseModel):
     message: str
     session_id: str = None
     mode: str = "internal"  # "internal"（内部機密文書）or "proposal"（提案書）
+    source_mode: str = "auto"  # "auto"（全ソース自動参照） or "manual"（選択ソースのみ参照）
+    selected_source_ids: list[str] = []  # 手動モード時に選択されたsources.idの一覧
 
 
 class ChatResponse(BaseModel):
     answer: str
-    sources: list[dict]
+    citations: list[dict]
     session_id: str
 
 
@@ -29,16 +31,21 @@ class ChatResponse(BaseModel):
 async def chat(request: ChatRequest):
     """チャット問い合わせ（RAG回答）"""
     session_id = request.session_id or str(uuid.uuid4())
-    logger.info(f"チャット受信 [session={session_id}]: {request.message[:50]}...")
+    source_ids = request.selected_source_ids if request.source_mode == "manual" else []
+    logger.info(
+        f"チャット受信 [session={session_id}]: {request.message[:50]}... "
+        f"(source_mode={request.source_mode}, selected_source_ids={source_ids})"
+    )
 
     try:
         result = await rag_engine.query(
             user_query=request.message,
             session_id=session_id,
+            source_ids=source_ids,
         )
         return ChatResponse(
             answer=result.answer,
-            sources=result.sources,
+            citations=result.citations,
             session_id=session_id,
         )
     except Exception as e:

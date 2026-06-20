@@ -4,6 +4,7 @@
 """
 import os
 import re
+import json
 import sqlite3
 import hashlib
 import uuid
@@ -13,7 +14,15 @@ from fastapi import APIRouter, HTTPException, UploadFile, File
 from pydantic import BaseModel
 from loguru import logger
 
+from services.llm_client import llm_client
+
 router = APIRouter()
+
+FALLBACK_SUGGESTIONS = [
+    "登録されているソースの主要なポイントを要約してください。",
+    "最近追加されたソースについて詳しく教えてください。",
+    "ソースの内容に関するよくある質問は何ですか？",
+]
 
 DB_PATH = os.getenv("SQLITE_DB_PATH", "/data/sqlite/knowledge.db")
 SOURCES_DIR = Path(os.getenv("SOURCES_DIR", "/data/sources"))
@@ -167,6 +176,57 @@ async def list_sources():
         }
     finally:
         conn.close()
+
+
+@router.get("/suggestions")
+async def get_suggestions(mode: str = "auto"):
+    """現在のソース一覧をもとにLLMで推奨プロンプトを3件生成する"""
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        rows = conn.execute(
+            "SELECT name, type, file_path FROM sources ORDER BY uploaded_at DESC LIMIT 10"
+        ).fetchall()
+    finally:
+        conn.close()
+
+    if not rows:
+        return {"suggestions": FALLBACK_SUGGESTIONS}
+
+    doc_descriptions = []
+    for name, type_, file_path in rows:
+        if type_ == "memo":
+            try:
+                content = Path(file_path).read_text(encoding="utf-8", errors="ignore")
+                doc_descriptions.append(f"{name}（メモ）: {content[:120]}")
+            except OSError:
+                doc_descriptions.append(f"{name}（メモ）")
+        else:
+            doc_descriptions.append(f"{name}（{type_}）")
+
+    doc_list_text = "\n".join(f"- {d}" for d in doc_descriptions)
+    prompt = (
+        "以下のドキュメント一覧をもとに、ユーザーが質問したくなる具体的な質問を3件、"
+        "JSON配列で返してください。余分な説明は不要です。\n"
+        '例: ["質問1","質問2","質問3"]\n\n'
+        f"ドキュメント:\n{doc_list_text}"
+    )
+
+    try:
+        raw = await llm_client.generate(prompt)
+        match = re.search(r"\[.*\]", raw, re.DOTALL)
+        if not match:
+            raise ValueError("応答にJSON配列が見つかりません")
+        suggestions = json.loads(match.group(0))
+        if not isinstance(suggestions, list) or not all(isinstance(s, str) for s in suggestions):
+            raise ValueError("不正な形式の応答")
+        suggestions = [s for s in suggestions if s.strip()][:3]
+        if not suggestions:
+            raise ValueError("空の配列")
+    except Exception as e:
+        logger.warning(f"推奨プロンプト生成に失敗、フォールバックを使用します: {e}")
+        suggestions = FALLBACK_SUGGESTIONS
+
+    return {"suggestions": suggestions}
 
 
 @router.post("/upload")

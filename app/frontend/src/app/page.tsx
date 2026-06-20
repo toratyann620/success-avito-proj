@@ -17,6 +17,7 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 type ReferenceMode = "auto" | "manual";
 type StudioTab = "studio" | "memo";
 type MemoDraft = { id: string; title: string; content: string };
+type PromptChip = { label: string; prompt: string };
 
 /* ============================
    権限トグル
@@ -97,7 +98,7 @@ function DemoToggle({ demoMode, onToggle }: { demoMode: boolean; onToggle: () =>
 /* ============================
    ウェルカム（初期）画面
    ============================ */
-function WelcomeView({ onPrompt }: { onPrompt: (p: string) => void }) {
+function WelcomeView({ prompts, onPrompt }: { prompts: PromptChip[]; onPrompt: (p: string) => void }) {
   return (
     <div style={{
       flex: 1,
@@ -148,7 +149,7 @@ function WelcomeView({ onPrompt }: { onPrompt: (p: string) => void }) {
         width: "100%",
         maxWidth: 680,
       }}>
-        {quickPrompts.map((qp, i) => (
+        {prompts.map((qp, i) => (
           <motion.button
             key={i}
             initial={{ opacity: 0, y: 12 }}
@@ -159,13 +160,14 @@ function WelcomeView({ onPrompt }: { onPrompt: (p: string) => void }) {
             onClick={() => onPrompt(qp.prompt)}
             className="suggestion-chip"
           >
-            <span style={{ fontSize: 20, marginBottom: 4 }}>{qp.label.split(" ")[0]}</span>
             <span style={{ fontWeight: 500, fontSize: 13, color: "#e3e3e3" }}>
-              {qp.label.split(" ").slice(1).join(" ")}
+              {qp.label}
             </span>
-            <span style={{ fontSize: 12, color: "#6e6e6e", lineHeight: 1.4 }}>
-              {qp.prompt.length > 28 ? qp.prompt.slice(0, 28) + "…" : qp.prompt}
-            </span>
+            {qp.label !== qp.prompt && (
+              <span style={{ fontSize: 12, color: "#6e6e6e", lineHeight: 1.4 }}>
+                {qp.prompt.length > 36 ? qp.prompt.slice(0, 36) + "…" : qp.prompt}
+              </span>
+            )}
           </motion.button>
         ))}
       </div>
@@ -176,10 +178,10 @@ function WelcomeView({ onPrompt }: { onPrompt: (p: string) => void }) {
 /* ============================
    推奨プロンプト（会話継続中）
    ============================ */
-function SuggestedPrompts({ onPick }: { onPick: (p: string) => void }) {
+function SuggestedPrompts({ prompts, onPick }: { prompts: PromptChip[]; onPick: (p: string) => void }) {
   return (
     <div style={{ display: "flex", gap: 8, flexWrap: "wrap", padding: "4px 0 24px" }}>
-      {quickPrompts.map((qp, i) => (
+      {prompts.map((qp, i) => (
         <button key={i} className="prompt-chip" onClick={() => onPick(qp.prompt)}>
           {qp.label}
         </button>
@@ -856,9 +858,33 @@ export default function Page() {
   const [draftContent, setDraftContent] = useState("");
   const [editingDraftId, setEditingDraftId] = useState<string | null>(null);
 
+  // 推奨プロンプト（ソース内容に応じて動的取得、失敗時は固定値を表示し続ける）
+  const [dynamicPrompts, setDynamicPrompts] = useState<PromptChip[]>(quickPrompts);
+
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, generating, thinkingLabel]);
+
+  // ソースの構成（id・選択状態）が実際に変化したときだけ推奨プロンプトを再取得する
+  const sourcesSignature = sources.map((s) => `${s.id}:${s.selected}`).join(",");
+
+  useEffect(() => {
+    if (!isLoggedIn) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`${API_BASE}/api/sources/suggestions?mode=${refMode}`);
+        if (!res.ok || cancelled) return;
+        const data = await res.json();
+        if (!cancelled && Array.isArray(data.suggestions) && data.suggestions.length > 0) {
+          setDynamicPrompts(data.suggestions.map((s: string) => ({ label: s, prompt: s })));
+        }
+      } catch (e) {
+        console.error("推奨プロンプト取得エラー:", e);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [isLoggedIn, sourcesSignature, refMode]);
 
   /* ---- ソース一覧の取得・自動リフレッシュ ---- */
   const fetchSources = useCallback(async () => {
@@ -1209,6 +1235,10 @@ export default function Page() {
           message: content,
           session_id: sessionId,
           mode: role === "admin" ? "internal" : "proposal",
+          source_mode: refMode,
+          selected_source_ids: refMode === "manual"
+            ? sources.filter((s) => s.selected).map((s) => s.id)
+            : [],
         }),
       });
 
@@ -1225,7 +1255,7 @@ export default function Page() {
           role: "assistant",
           content: data.answer,
           fileChip: fileChipData,
-          citations: data.sources && data.sources.length > 0 ? data.sources : undefined,
+          citations: data.citations && data.citations.length > 0 ? data.citations : undefined,
           timestamp: new Date(),
         },
       ]);
@@ -1245,7 +1275,7 @@ export default function Page() {
 
     setThinkingLabel("");
     setGenerating(false);
-  }, [input, generating, role, attachedFile, demoMode, sessionId]);
+  }, [input, generating, role, attachedFile, demoMode, sessionId, refMode, sources]);
 
   const handleNewChat = () => {
     setMessages([]);
@@ -1312,7 +1342,7 @@ export default function Page() {
         <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0, overflow: "hidden" }}>
           <div className="chat-scroll" style={{ display: "flex", flexDirection: "column" }}>
             {messages.length === 0 && !generating ? (
-              <WelcomeView onPrompt={(p) => handleSend(p)} />
+              <WelcomeView prompts={dynamicPrompts} onPrompt={(p) => handleSend(p)} />
             ) : (
               <div style={{ maxWidth: 720, width: "100%", margin: "0 auto", padding: "32px 24px 0" }}>
                 <AnimatePresence>
@@ -1329,7 +1359,7 @@ export default function Page() {
                   {generating && <GeneratingIndicator label={thinkingLabel} />}
                 </AnimatePresence>
                 {!generating && messages.length > 0 && messages[messages.length - 1].role === "assistant" && (
-                  <SuggestedPrompts onPick={(p) => handleSend(p)} />
+                  <SuggestedPrompts prompts={dynamicPrompts} onPick={(p) => handleSend(p)} />
                 )}
                 <div ref={bottomRef} style={{ height: 8 }} />
               </div>

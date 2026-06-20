@@ -28,7 +28,7 @@ class SearchResult:
 class RAGResponse:
     """RAG回答"""
     answer: str
-    sources: list[dict]
+    citations: list[dict]
     query: str
 
 
@@ -53,8 +53,12 @@ class RAGEngine:
         self.max_context_chars = 4000  # コンテキスト最大文字数
         self.top_k = 5  # 検索結果の上位件数
 
-    def search_fts(self, query: str, top_k: int = None) -> list[SearchResult]:
-        """FTS5全文検索でドキュメントを検索する"""
+    def search_fts(self, query: str, top_k: int = None, source_ids: list[str] = None) -> list[SearchResult]:
+        """FTS5全文検索でドキュメントを検索する
+
+        source_ids が指定された場合（手動参照モード）、sources テーブルで
+        選択されたソースの file_path に一致する documents_fts.doc_id のみを検索対象にする。
+        """
         query = clean_fts_query(query)
         if not query:
             return []
@@ -65,18 +69,35 @@ class RAGEngine:
         try:
             cursor = conn.cursor()
             # FTS5のMATCHクエリで全文検索
-            cursor.execute("""
-                SELECT
-                    doc_id,
-                    file_path,
-                    file_name,
-                    snippet(documents_fts, 3, '<b>', '</b>', '...', 32) AS snippet,
-                    rank
-                FROM documents_fts
-                WHERE documents_fts MATCH ?
-                ORDER BY rank
-                LIMIT ?
-            """, (query, k))
+            if source_ids:
+                placeholders = ",".join("?" * len(source_ids))
+                logger.info(f"手動参照モード: {len(source_ids)}件のソースに限定して検索 (ids={source_ids})")
+                cursor.execute(f"""
+                    SELECT
+                        doc_id,
+                        file_path,
+                        file_name,
+                        snippet(documents_fts, 3, '<b>', '</b>', '...', 32) AS snippet,
+                        rank
+                    FROM documents_fts
+                    WHERE documents_fts MATCH ?
+                      AND doc_id IN (SELECT file_path FROM sources WHERE id IN ({placeholders}))
+                    ORDER BY rank
+                    LIMIT ?
+                """, (query, *[int(sid) for sid in source_ids], k))
+            else:
+                cursor.execute("""
+                    SELECT
+                        doc_id,
+                        file_path,
+                        file_name,
+                        snippet(documents_fts, 3, '<b>', '</b>', '...', 32) AS snippet,
+                        rank
+                    FROM documents_fts
+                    WHERE documents_fts MATCH ?
+                    ORDER BY rank
+                    LIMIT ?
+                """, (query, k))
             rows = cursor.fetchall()
             results = []
             for row in rows:
@@ -122,12 +143,12 @@ class RAGEngine:
 
         return "\n---\n".join(context_parts), sources
 
-    async def query(self, user_query: str, session_id: str = None) -> RAGResponse:
+    async def query(self, user_query: str, session_id: str = None, source_ids: list[str] = None) -> RAGResponse:
         """ユーザーの質問に対してRAG回答を生成する"""
         logger.info(f"RAGクエリ: {user_query[:50]}...")
 
-        # 1. 全文検索
-        results = self.search_fts(user_query)
+        # 1. 全文検索（source_ids指定時は選択ソースのみに限定）
+        results = self.search_fts(user_query, source_ids=source_ids)
         logger.info(f"検索結果: {len(results)}件")
 
         if not results:
@@ -136,10 +157,10 @@ class RAGEngine:
                 {"role": "system", "content": "あなたは社内AIアシスタントです。参照資料がありません。その旨を伝えたうえで、一般的な観点から簡潔に回答してください。"},
                 {"role": "user", "content": user_query},
             ])
-            return RAGResponse(answer=answer, sources=[], query=user_query)
+            return RAGResponse(answer=answer, citations=[], query=user_query)
 
         # 2. コンテキスト構築
-        context, sources = self.build_context(results)
+        context, citations = self.build_context(results)
 
         # 3. LLMで回答生成
         system_prompt = RAG_SYSTEM_PROMPT.format(context=context)
@@ -148,7 +169,7 @@ class RAGEngine:
             {"role": "user", "content": user_query},
         ])
 
-        return RAGResponse(answer=answer, sources=sources, query=user_query)
+        return RAGResponse(answer=answer, citations=citations, query=user_query)
 
     async def generate_document_draft(
         self,
@@ -161,7 +182,7 @@ class RAGEngine:
 
         # 関連資料を検索
         results = self.search_fts(query)
-        context, sources = self.build_context(results)
+        context, citations = self.build_context(results)
 
         # 文書生成プロンプト
         prompt = DOCUMENT_GENERATION_PROMPT.format(
@@ -170,7 +191,7 @@ class RAGEngine:
             context=context if context else "（参照資料なし）",
         )
         answer = await llm_client.generate(prompt)
-        return RAGResponse(answer=answer, sources=sources, query=query)
+        return RAGResponse(answer=answer, citations=citations, query=query)
 
 
 # シングルトンインスタンス

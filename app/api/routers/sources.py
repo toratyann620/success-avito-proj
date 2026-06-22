@@ -139,6 +139,13 @@ def _index_for_rag(file_path: Path, content: str):
     finally:
         conn.close()
 
+    # ベクトルインデックスへの登録処理を追加
+    try:
+        from services.vector_engine import vector_engine
+        vector_engine.index_document(doc_id, file_path.name, content)
+    except Exception as e:
+        logger.warning(f"ベクトルインデックス登録に失敗（FTS5は成功）: {e}")
+
 
 def _unindex(file_path: Path):
     """documents / documents_fts からエントリを削除する"""
@@ -150,6 +157,13 @@ def _unindex(file_path: Path):
         conn.commit()
     finally:
         conn.close()
+
+    # ベクトルインデックスからの削除処理を追加
+    try:
+        from services.vector_engine import vector_engine
+        vector_engine.remove_document(doc_id)
+    except Exception as e:
+        logger.warning(f"ベクトルインデックス削除に失敗: {e}")
 
 
 def _safe_filename(name: str) -> str:

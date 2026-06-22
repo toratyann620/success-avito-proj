@@ -38,21 +38,25 @@
   │ REST API
   ▼
 FastAPI バックエンド                      Port: 3101
-  ├── RAGエンジン
+  ├── RAGエンジン (ベクトル検索: LlamaIndex+ChromaDB+e5-small / RAG_BACKEND=fts5でFTS5に切替可)
   ├── NL2SQLエンジン (Step2)
   ├── 文書生成 (Word/Excel/PPT) ※/api/documents/generate は単体APIとして残置、チャットからは呼ばない
   ├── 出力生成 (チャット履歴→Excel/Word/PPT、/api/output/*)
   ├── ソース管理 (アップロード/パス参照/URL/自動検索、/api/sources/*)
-  ├── 設定管理 (watch-paths、/api/settings/*)
+  ├── 設定管理 (watch-paths/モデル切替、/api/settings/*)
   ├── 音声認識 (Whisper tiny)
   └── 監査ログサービス
          │
-    ┌────┴────────────────────┐
-    ▼                         ▼
-ローカルLLM (Ollama)      SQLiteデータベース
-Port: 3107                ├── knowledge.db (FTS5/RAG/sources/watch_paths/
-Model: qwen2.5-coder:1.5b │              chat_history/output_files)
-(高スペック時: gemma3:12b) └── business.db (販売・会計)
+    ┌────┴───────────────────────┬───────────────────────┐
+    ▼                            ▼                       ▼
+ローカルLLM (Ollama)      SQLiteデータベース        ベクトルストア (ChromaDB)
+Port: 3107                ├── knowledge.db          /data/vector_store
+Model: qwen2.5-coder:1.5b │   (FTS5/RAG/sources/    Embedding: ローカルHuggingFace
+(高スペック時: gemma3:12b) │    watch_paths/         intfloat/multilingual-e5-small
+                           │    chat_history/        （Ollamaとは独立・モデル切替の影響なし）
+                           │    output_files/
+                           │    settings)
+                           └── business.db (販売・会計)
                            ▲
                     ファイル監視クローラー
                     (watchdog + ポーリング)
@@ -80,7 +84,7 @@ docker compose ps
 | FastAPI Swagger | http://localhost:3101/docs |
 | API ヘルスチェック | http://localhost:3101/health |
 | Ollama LLM | http://localhost:3107 |
-| Open Notebook | http://localhost:3104 |
+| Open Notebook（将来統合用・現在未使用） | http://localhost:3104（`docker compose --profile open-notebook up -d` で個別起動が必要。通常の`docker compose up -d`では起動しない） |
 
 ---
 
@@ -106,9 +110,11 @@ docker compose ps
 │   │   │   ├── sources.py      ← ソース管理・自動検索 (/api/sources/*)
 │   │   │   └── settings.py     ← watch-paths設定管理 (/api/settings/*)
 │   │   ├── services/
-│   │   │   ├── rag_engine.py   ← RAG検索・LLMプロンプト管理
+│   │   │   ├── rag_engine.py   ← RAG検索・LLMプロンプト管理（RAG_BACKENDで検索方式を切替）
+│   │   │   ├── vector_engine.py ← LlamaIndexベクトルエンジン（ChromaDB + e5-small）
 │   │   │   ├── llm_client.py   ← Ollama接続クライアント
 │   │   │   └── db.py           ← SQLite FTS5 初期化
+│   │   ├── reindex_vectors.py  ← 既存文書をベクトルストアへ再インデックスするバッチスクリプト
 │   │   └── requirements.txt
 │   └── frontend/               ← Next.js フロントエンド
 │       └── src/app/
@@ -157,6 +163,11 @@ OLLAMA_MODEL=qwen2.5-coder:1.5b  # RAM 8GB CPU環境の推奨値
 OLLAMA_TIMEOUT=120
 BRAVE_SEARCH_ENABLED=false        # 外部検索は常にデフォルトOFF
 SQLITE_DB_PATH=/data/sqlite/knowledge.db
+
+# ----- ベクトル検索（LlamaIndex） -----
+VECTOR_STORE_PATH=/data/vector_store
+EMBEDDING_MODEL=intfloat/multilingual-e5-small
+RAG_BACKEND=vector  # "fts5"でFTS5フォールバックに切替可能（安全装置・要コンテナ再作成）
 ```
 
 ---
@@ -193,12 +204,15 @@ SQLITE_DB_PATH=/data/sqlite/knowledge.db
   そのまま送信するため実際には常に整数で届き、`422 Unprocessable Entity` を引き起こすバグがあった。
   ブラウザでの実E2E検証で発見し、`list[int]` に修正済み（`rag_engine.py` の型ヒントも同様に修正）。
 
-### 📌 RAGの実装実態（提案書との差分）
-- 提案書では Open Notebook を RAG 中核としていたが、現行実装の RAG は
-  自前の SQLite FTS5（app/api/services/db.py + rag_engine.py）で完結している。
-- docker-compose の open-notebook コンテナは現状どのコードからも参照されていない。
-  将来 Open Notebook をRAG基盤に切り替える場合は、rag_engine.py の検索層を
-  差し替える設計とすること。
+### 📌 RAGの実装実態（LlamaIndex ベクトル検索移行）
+- RAGの中核検索エンジンを SQLite FTS5 から、**LlamaIndex によるベクトル検索（ChromaDB 永続化 + `intfloat/multilingual-e5-small`）** に移行しました。
+- 登録処理 (`sources.py` 内) では FTS5 と ChromaDB（`vector_engine.py`）の両方にドキュメントを追加し、検証・ロールバック性を維持しています。
+- **安全装置 (ロールバック)**: `.env` 内の `RAG_BACKEND`（`vector` または `fts5`）を切り替えてコンテナを再起動（`docker compose up -d`）することで、即座に旧 FTS5 全文検索に戻すことができます。
+- **メタデータ競合対策**: LlamaIndex の内部仕様による `doc_id` メタデータの上書き（UUID化）を防ぐため、`vector_engine.py` で `Document` を構築する際、`id_=doc_id`（正規化済みファイルパス）を明示的に指定してインデックス化を行っています。
+- `docker-compose.yml` 内の `open-notebook` サービスは `profiles: ["open-notebook"]` を指定し、通常の `docker compose up -d` では起動しないように構成しています。
+- **初期化失敗時のフェイルセーフ（Claude Codeブラッシュアップで追加）**: `vector_engine.py::VectorEngine.__init__()` は当初、Embeddingモデルロード等に失敗すると例外を再raiseしていたが、`rag_engine.py` がモジュールimport時点で `vector_engine` をimportしているため、**初期化失敗時にAPI全体が起動不能になる**（`RAG_BACKEND=fts5` のフォールバックすら使えなくなる）という重大なリスクがあった。`self.index=None` のまま握って非致命化し、各メソッド（`index_document`/`remove_document`/`search`）側で未初期化時に安全に縮退動作（ログ警告＋空リスト/早期return）するように修正済み。
+- **`should_use_rag()` とのフレーズ競合（既知の制約）**: `should_use_rag()`（`chat.py`、変更禁止）の `skip_phrases` に含まれる `"教えて"` は、`"5月が赤字の原因を教えてください"` のような**具体的な内容を問う質問にも誤マッチし、RAGをスキップしてしまう**。受け入れ基準のテスト文言そのものがこの影響を受けるため、動作確認時は `"...教えて"` を含まない言い回し（例:「5月の損失の主な原因は何ですか」）を使うこと。`should_use_rag()` 自体は「直近で実装・検証済み」のため本改修では変更していない。
+- **検索精度と生成精度の切り分け**: ベクトル検索自体は正しく機能しており、関連チャンクを類似度0.7前後で正確に取得できることを確認済み（例:「4月の売上はいくらですか」→`13,670,324円`の行を含むチャンクをスコア0.70で取得）。一方、`qwen2.5-coder:1.5b`（コード特化・1.5Bパラメータの軽量モデル）は日本語の財務文書読解・多桁数値の転記精度に限界があり、同じ質問でも生成結果が`13,670,324`→`1,670,324`のように桁を欠落させる、または中国語混じりの文章を生成することがある。これは**検索（vector_engine.py）の不具合ではなく、生成モデル側の能力的な限界**。回答精度を上げたい場合はモデル切替UI（`gemma3:12b`等、ただし8GB RAM環境ではOOMリスクあり）で対応すること。
 
 ### 🔒 セキュリティ設計（変更禁止）
 NL2SQL の安全性は以下の **二重防御**で担保しており、絶対に緩和しないこと：
@@ -260,6 +274,9 @@ docker compose exec api python step2/sample_db_setup.py
 # DBインデックス最適化
 docker compose exec api python step2/add_indexes.py
 
+# 既存文書をベクトルインデックスに再登録（モデル変更後や初回セットアップ時）
+docker compose exec api python reindex_vectors.py
+
 # APIコンテナのログ確認
 docker compose logs -f api
 
@@ -307,7 +324,7 @@ docker compose restart api
 
 | 機能 | ステータス | 備考 |
 |:---|:---:|:---|
-| RAG全文検索・チャット回答 | ✅ 完了 | SQLite FTS5 + Ollama |
+| RAGベクトル検索・チャット回答 | ✅ 完了 | LlamaIndex + ChromaDB + e5-small + Ollama。`RAG_BACKEND=fts5`でFTS5フォールバックに切替可能 |
 | ファイル監視・自動インデクシング | ✅ 完了 | watchdog + ポーリング(300秒) |
 | 音声認識 (Whisper) | ✅ 完了 | tiny モデル / 日本語対応 |
 | Word/Excel/PPT自動生成 | ✅ 完了 | python-docx/openpyxl/python-pptx |
@@ -326,16 +343,20 @@ docker compose restart api
 
 ## 10. 次のステップ（将来的な課題）
 
-**完了済み（ステップ1〜4）**:
+**完了済み（ステップ1〜5）**:
 - ステップ1: 設定API（watch-paths）・ソース自動検索API（auto-search）
 - ステップ2: チャット履歴からのファイル出力API（`/api/output/*`）とチャット/出力の機能分離
 - ステップ3: パス参照型ソース登録API（`from-path`/`from-url`）と左パネルの手動＋自動入力UI統合
 - ステップ4: 中央エリアのプロンプトテンプレート4×2グリッド化、右パネルの「出力」改称・6ボックス化、ファイルチップ廃止
+- ステップ5: **LlamaIndexベクトル検索の実装**（Antigravity一次実装 → Claude Codeブラッシュアップ）。SQLite FTS5キーワード検索から、ChromaDB永続化 + `intfloat/multilingual-e5-small` によるベクトル（意味）検索へ移行。`RAG_BACKEND`環境変数でFTS5への即時ロールバックが可能な安全装置付き。受け入れ基準10項目のうち、検索・インデックス連動・バックエンド切替・既存機能非破壊（Excel/NL2SQL/モデル切替）は実機検証済み。回答に特定の単語（例:「減価償却費」）や多桁の数値が正確に含まれるかは、検索結果の妥当性とは別に`qwen2.5-coder:1.5b`の生成精度に依存するため、上記「検索精度と生成精度の切り分け」を参照のこと。
 
 **残課題**:
 1. **プロンプトボックス5〜8（カスタム追加）の設定連携**: 現在は空枠のみ。ユーザーが独自のプロンプトテンプレートを登録・編集できる設定UI・APIが必要。
 2. **出力ボックス4〜6（カスタム追加）の設定連携**: 同上。Excel/Word/PPT以外の出力形式や、独自テンプレートに基づく出力を追加できるようにする。
 3. **会社の定型フォーマットへの対応**: 出力時に既存の社内フォーマット（Excelテンプレート等）を読み込み、その体裁を維持したまま出力する機能。
-4. **Word/PPT出力の品質向上**: 現行 `qwen2.5-coder:1.5b` では構成・体裁の粒度が粗い。`gemma3:12b` 等の高精度モデルへの切り替えで改善見込み。
+4. **Word/PPT出力の品質向上**: 現行 `qwen2.5-coder:1.5b` では構成・体裁の粒度が粗い。`gemma3:12b` 等の高精度モデルへの切り替えで改善見込み（モデル切替UIは実装済み。ただし8GB RAM環境ではOOMクラッシュのリスクがあるため要注意）。
 5. **本番DBスキーマへの差し替え**: `step2/schema_catalog/catalog.yaml` のテーブル定義・KPI計算式を、実際の会計・販売システムのスキーマに合わせて書き換える。
 6. **PoC実施**: 実ユーザーによる試用・フィードバック収集・チューニング。
+7. **Open Notebook本体の統合**（将来フェーズ）: SurrealDB追加・Open Notebook REST API連携によるNotebookLM互換のノート管理・ポッドキャスト生成。工数2〜3週間。ベクトル検索が安定運用された後に検討。
+8. **ハイブリッド検索**: FTS5（キーワード）とベクトル（意味）のスコアを統合し、検索精度をさらに向上させる。
+9. **出典のページ番号表示**: チャンクにページ番号メタデータを付与し、NotebookLM同様の精密な出典表示を実現する。

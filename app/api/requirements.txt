@@ -4,11 +4,12 @@ fastapi
 uvicorn[standard]
 python-multipart
 
-# LLM / RAG
-# llama-index
-# llama-index-llms-ollama
-# llama-index-embeddings-huggingface
-# llama-index-vector-stores-chroma
+# LLM / RAG（コメントを外して有効化）
+llama-index-core==0.11.23
+llama-index-embeddings-huggingface==0.3.1
+llama-index-vector-stores-chroma==0.2.1
+chromadb==0.5.15
+sentence-transformers==3.0.1
 
 # 全文検索
 # SQLite FTS5 は Python 標準ライブラリに含まれる

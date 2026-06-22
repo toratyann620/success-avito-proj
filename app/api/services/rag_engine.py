@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from loguru import logger
 
 from services.llm_client import llm_client, RAG_SYSTEM_PROMPT, DOCUMENT_GENERATION_PROMPT
+from services.vector_engine import vector_engine
 
 DB_PATH = os.getenv("SQLITE_DB_PATH", "/data/sqlite/knowledge.db")
 
@@ -54,16 +55,35 @@ class RAGEngine:
         self.top_k = 5  # 検索結果の上位件数
 
     def search_fts(self, query: str, top_k: int = None, source_ids: list[int] = None) -> list[SearchResult]:
-        """FTS5全文検索でドキュメントを検索する
+        """ドキュメントを検索する（RAG_BACKENDによりベクトル検索/FTS5検索を切替）
 
         source_ids が指定された場合（手動参照モード）、sources テーブルで
-        選択されたソースの file_path に一致する documents_fts.doc_id のみを検索対象にする。
+        選択されたソースの file_path に一致するドキュメントのみを検索対象にする。
         """
+        # 環境変数でRAGバックエンドを判定（デフォルトはベクトル検索）
+        backend = os.getenv("RAG_BACKEND", "vector")
+        k = top_k or self.top_k
+
+        if backend == "vector":
+            logger.info("ベクトル検索バックエンドを使用します。")
+            vec_results = vector_engine.search(query, k, source_ids)
+            # rag_engine 側の SearchResult クラスにマッピングして返す
+            results = []
+            for r in vec_results:
+                results.append(SearchResult(
+                    file_path=r.file_path,
+                    file_name=r.file_name,
+                    content=r.content,
+                    score=r.score,
+                    snippet=r.snippet
+                ))
+            return results
+
+        logger.info("FTS5全文検索バックエンドを使用します（フォールバック）。")
         query = clean_fts_query(query)
         if not query:
             return []
 
-        k = top_k or self.top_k
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
         try:

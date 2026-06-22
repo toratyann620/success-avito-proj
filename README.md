@@ -51,12 +51,14 @@ docker compose up -d
 > 完了まで10〜30分かかる場合があります。
 
 ### 4. アクセス
+> ポート割り当ては `997_開発ナレッジ/04_PORT_MANAGEMENT.md` のポート台帳（051_AI文書検索作成Proj: 3100-3109）に準拠。
+
 | サービス | URL |
 |---------|-----|
-| **チャットUI** | http://localhost:3002 |
-| **API ドキュメント** | http://localhost:8000/docs |
-| **Open Notebook** | http://localhost:5001 |
-| **Ollama** | http://localhost:11434 |
+| **チャットUI** | http://localhost:3102 |
+| **API ドキュメント** | http://localhost:3101/docs |
+| **Open Notebook** | http://localhost:3104 |
+| **Ollama** | http://localhost:3107 |
 
 ---
 

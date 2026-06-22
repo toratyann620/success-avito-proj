@@ -18,6 +18,7 @@ volumes:
   vector_store_data: # ベクトルストアの永続化
   open_notebook_data:
   sources_data:      # アップロードされたソースファイルの永続化
+  output_files_data: # チャット履歴から生成された出力ファイル(Excel/Word/PPT)の永続化
 
 services:
 
@@ -29,7 +30,7 @@ services:
     image: ollama/ollama:latest
     container_name: ai-knowledge-ollama
     ports:
-      - "11434:11434"
+      - "3107:11434"  # ポート台帳: 051_AI文書検索作成Proj (3100-3109)
     volumes:
       - ollama_data:/root/.ollama
     networks:
@@ -78,7 +79,7 @@ services:
     image: lfnovo/open_notebook:latest
     container_name: ai-knowledge-open-notebook
     ports:
-      - "5001:5000"
+      - "3104:5000"  # ポート台帳: 051_AI文書検索作成Proj (3100-3109)
     volumes:
       - open_notebook_data:/app/data
       - ./watch:/watch:ro  # 監視対象フォルダ（読み取り専用でマウント）
@@ -100,16 +101,19 @@ services:
       dockerfile: Dockerfile
     container_name: ai-knowledge-api
     ports:
-      - "8000:8000"
+      - "3101:8000"  # ポート台帳: 051_AI文書検索作成Proj (3100-3109)
     volumes:
       - ./app/api:/app
       - ./templates:/templates:ro
       - ./watch:/watch:ro
       - ./step2:/app/step2
       - ./tests:/app/tests
+      # 自動検索(watch-paths)対象フォルダ。新規追加時は /mnt/watch_roots/<フォルダ名> の規約で追記する
+      - ./test-business-docs:/mnt/watch_roots/test-business-docs:ro
       - sqlite_data:/data/sqlite
       - vector_store_data:/data/vector_store
       - sources_data:/data/sources
+      - output_files_data:/data/output_files
     networks:
       - ai-knowledge-net
     environment:
@@ -137,11 +141,11 @@ services:
       dockerfile: Dockerfile
     container_name: ai-knowledge-frontend
     ports:
-      - "3002:3000"
+      - "3102:3000"  # ポート台帳: 051_AI文書検索作成Proj (3100-3109)
     networks:
       - ai-knowledge-net
     environment:
-      - NEXT_PUBLIC_API_URL=http://localhost:8000
+      - NEXT_PUBLIC_API_URL=http://localhost:3101
     depends_on:
       - api
     restart: unless-stopped

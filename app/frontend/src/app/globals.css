@@ -2,34 +2,34 @@
 
 /* ===== Gemini-like Design System ===== */
 :root {
-  --bg-base: #131314;
-  --bg-sidebar: #1e1f20;
-  --bg-sidebar-hover: #2a2b2d;
-  --bg-input: #1e1f20;
-  --bg-input-hover: #282829;
-  --bg-user-msg: #2b2c2f;
-  --bg-chip: #2b2c2f;
-  --bg-chip-hover: #3a3b3e;
-  --border-subtle: rgba(255,255,255,0.1);
-  --border-input: rgba(255,255,255,0.12);
-  --text-primary: #e3e3e3;
-  --text-secondary: #ababab;
-  --text-tertiary: #6e6e6e;
-  --accent-blue: #8ab4f8;
-  --accent-purple: #b39dff;
-  --accent-teal: #78d9ec;
+  --bg-base: #f8f9fa;
+  --bg-sidebar: #ffffff;
+  --bg-sidebar-hover: #f1f3f4;
+  --bg-input: #f1f3f4;
+  --bg-input-hover: #e8eaed;
+  --bg-user-msg: #e8f0fe;
+  --bg-chip: #f1f3f4;
+  --bg-chip-hover: #e8eaed;
+  --border-subtle: rgba(0,0,0,0.1);
+  --border-input: rgba(0,0,0,0.12);
+  --text-primary: #202124;
+  --text-secondary: #5f6368;
+  --text-tertiary: #9aa0a6;
+  --accent-blue: #1a73e8;
+  --accent-purple: #7c4dff;
+  --accent-teal: #00897b;
   --gem-1: #4285f4;
   --gem-2: #9b59b6;
   --gem-3: #ea4335;
   --gem-4: #34a853;
   /* Claude生成ダッシュボード用変数 */
-  --color-text-primary: #e3e3e3;
-  --color-text-secondary: #ababab;
-  --color-text-tertiary: #6e6e6e;
-  --color-background-primary: #131314;
-  --color-background-secondary: #1e1f20;
-  --color-border-tertiary: rgba(255,255,255,0.08);
-  --color-border-secondary: rgba(255,255,255,0.12);
+  --color-text-primary: #202124;
+  --color-text-secondary: #5f6368;
+  --color-text-tertiary: #9aa0a6;
+  --color-background-primary: #f8f9fa;
+  --color-background-secondary: #ffffff;
+  --color-border-tertiary: rgba(0,0,0,0.08);
+  --color-border-secondary: rgba(0,0,0,0.12);
   --border-radius-md: 10px;
   --font-sans: 'Google Sans', 'Helvetica Neue', Arial, sans-serif;
 }
@@ -48,8 +48,8 @@ html, body {
 /* スクロールバー */
 ::-webkit-scrollbar { width: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 8px; }
-::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.2); }
+::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.15); border-radius: 8px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(0,0,0,0.25); }
 
 /* ===== Gemini ロゴアイコン ===== */
 @keyframes gem-spin {
@@ -141,24 +141,45 @@ html, body {
 .wave-bar:nth-child(4) { animation-delay: 0.1s; min-height: 4px; }
 .wave-bar:nth-child(5) { animation-delay: 0.05s; min-height: 4px; }
 
-/* チップ（サジェスト） */
-.suggestion-chip {
+/* プロンプトボックス（中央エリア 4×2グリッド） */
+.prompt-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  padding: 8px 0 12px;
+}
+.prompt-box {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
-  gap: 4px;
-  padding: 16px;
-  border-radius: 16px;
-  background: var(--bg-chip);
-  border: 1px solid transparent;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 12px 8px;
+  border-radius: 8px;
+  background: linear-gradient(135deg, rgba(66,133,244,0.18), rgba(155,89,182,0.18));
+  border: 1px solid rgba(138,180,248,0.25);
+  color: var(--text-primary);
   cursor: pointer;
-  transition: background 0.15s ease, border-color 0.15s ease;
-  text-align: left;
-  min-height: 80px;
+  text-align: center;
+  font-size: 12px;
+  min-height: 64px;
+  transition: border-color 0.15s ease, background 0.15s ease;
 }
-.suggestion-chip:hover {
-  background: var(--bg-chip-hover);
-  border-color: var(--border-subtle);
+.prompt-box:hover { border-color: rgba(138,180,248,0.6); }
+.prompt-box.placeholder {
+  background: rgba(0,0,0,0.03);
+  border: 1px dashed rgba(0,0,0,0.12);
+  color: var(--text-tertiary);
+  cursor: default;
+}
+.prompt-box.placeholder:hover { border-color: rgba(0,0,0,0.12); }
+.prompt-box-icon { font-size: 18px; line-height: 1; }
+.prompt-box-label {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  line-height: 1.3;
 }
 
 /* 入力フィールド */
@@ -170,7 +191,7 @@ html, body {
 }
 .input-wrapper:focus-within {
   background: var(--bg-input-hover);
-  border-color: rgba(255,255,255,0.2);
+  border-color: rgba(0,0,0,0.2);
 }
 
 /* ユーザーメッセージ */
@@ -183,6 +204,8 @@ html, body {
   font-size: 15px;
   line-height: 1.6;
   color: var(--text-primary);
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 /* AI応答テキスト */
@@ -194,7 +217,7 @@ html, body {
 
 /* Markdownのstrong */
 .ai-message-text strong {
-  color: #e3e3e3;
+  color: #202124;
   font-weight: 600;
 }
 
@@ -228,7 +251,7 @@ html, body {
 .data-table th {
   text-align: left;
   padding: 10px 14px;
-  background: rgba(255,255,255,0.06);
+  background: rgba(0,0,0,0.04);
   color: var(--text-secondary);
   font-weight: 500;
   font-size: 12px;
@@ -237,24 +260,11 @@ html, body {
 }
 .data-table td {
   padding: 10px 14px;
-  border-bottom: 1px solid rgba(255,255,255,0.04);
+  border-bottom: 1px solid rgba(0,0,0,0.04);
   color: var(--text-primary);
 }
 .data-table tr:last-child td { border-bottom: none; }
-.data-table tr:hover td { background: rgba(255,255,255,0.03); }
-
-/* ファイルカード */
-.file-card {
-  display: inline-flex;
-  align-items: center;
-  gap: 12px;
-  padding: 12px 16px;
-  border-radius: 14px;
-  margin-top: 12px;
-  cursor: pointer;
-  transition: opacity 0.2s ease;
-}
-.file-card:hover { opacity: 0.85; }
+.data-table tr:hover td { background: rgba(0,0,0,0.02); }
 
 /* アクセス制限カード */
 .restricted-card {
@@ -311,9 +321,9 @@ html, body {
   padding: 2px 8px;
   border-radius: 100px;
   font-size: 11px;
-  background: rgba(138, 180, 248, 0.12);
-  color: #8ab4f8;
-  border: 1px solid rgba(138, 180, 248, 0.2);
+  background: rgba(26,115,232,0.08);
+  color: #1a73e8;
+  border: 1px solid rgba(26,115,232,0.2);
   cursor: pointer;
 }
 
@@ -346,30 +356,59 @@ html, body {
 .panel-action-btn.primary:disabled { opacity: 0.4; cursor: not-allowed; }
 .panel-action-btn.secondary { border-style: dashed; }
 
-/* 参照モード切替ラジオ */
-.mode-radio-row {
+/* ソースパネル セクション見出し */
+.source-section-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+/* 自動検索 候補行 */
+.auto-search-result-row {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 13px;
-  color: var(--text-secondary);
-  cursor: pointer;
-  padding: 2px 4px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  transition: background 0.15s ease;
 }
-.mode-radio-row input[type="radio"] { accent-color: #8ab4f8; cursor: pointer; }
+.auto-search-result-row:hover { background: var(--bg-sidebar-hover); }
 
-.auto-search-badge {
-  display: inline-flex;
+/* スピナー */
+.spin { animation: spin 0.8s linear infinite; }
+@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+
+/* モーダル */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.6);
+  display: flex;
   align-items: center;
-  gap: 6px;
-  font-size: 11px;
-  color: #8ab4f8;
-  background: rgba(138,180,248,0.1);
-  border: 1px solid rgba(138,180,248,0.2);
-  padding: 4px 8px;
-  border-radius: 100px;
-  margin-top: 4px;
-  width: fit-content;
+  justify-content: center;
+  z-index: 100;
+}
+.modal-panel {
+  width: 100%;
+  max-width: 440px;
+  max-height: 80vh;
+  overflow-y: auto;
+  background: var(--bg-sidebar);
+  border: 1px solid var(--border-subtle);
+  border-radius: 16px;
+  padding: 24px;
+  box-shadow: 0 20px 50px rgba(0,0,0,0.5);
+}
+.watch-path-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: rgba(0,0,0,0.03);
+  border: 1px solid rgba(0,0,0,0.06);
 }
 
 /* ソース一覧の行 */
@@ -383,7 +422,7 @@ html, body {
 }
 .source-row:hover { background: var(--bg-sidebar-hover); }
 .source-row:hover .source-row-delete { opacity: 1; }
-.source-row input[type="checkbox"] { accent-color: #8ab4f8; cursor: pointer; flex-shrink: 0; }
+.source-row input[type="checkbox"] { accent-color: #1a73e8; cursor: pointer; flex-shrink: 0; }
 .source-row-name {
   flex: 1;
   min-width: 0;
@@ -399,7 +438,7 @@ html, body {
   background: none;
   border: none;
   cursor: pointer;
-  color: #6e6e6e;
+  color: var(--text-tertiary);
   padding: 2px;
   display: flex;
   transition: opacity 0.15s ease, color 0.15s ease;
@@ -419,7 +458,7 @@ html, body {
   font-family: inherit;
   resize: none;
 }
-.memo-input:focus, .memo-textarea:focus { border-color: rgba(255,255,255,0.25); }
+.memo-input:focus, .memo-textarea:focus { border-color: rgba(0,0,0,0.25); }
 
 /* Studioパネル タブ */
 .tab-btn {
@@ -435,10 +474,10 @@ html, body {
   transition: color 0.15s ease, border-color 0.15s ease;
   font-family: inherit;
 }
-.tab-btn.active { color: var(--text-primary); border-bottom-color: #8ab4f8; }
+.tab-btn.active { color: var(--text-primary); border-bottom-color: #1a73e8; }
 .tab-btn:hover { color: var(--text-primary); }
 
-/* Studio プリセットカード */
+/* 出力パネル プリセットカード */
 .preset-card {
   display: flex;
   flex-direction: column;
@@ -458,6 +497,14 @@ html, body {
   font-family: inherit;
 }
 .preset-card:hover { background: var(--bg-chip-hover); border-color: var(--border-subtle); }
+.preset-card:disabled { opacity: 0.7; cursor: not-allowed; }
+.preset-card.placeholder {
+  background: rgba(0,0,0,0.03);
+  border: 1px dashed rgba(0,0,0,0.12);
+  color: var(--text-tertiary);
+  cursor: default;
+}
+.preset-card.placeholder:hover { background: rgba(0,0,0,0.03); border-color: rgba(0,0,0,0.12); }
 
 /* 出力ファイル置き場 */
 .output-file-row {
@@ -466,8 +513,8 @@ html, body {
   gap: 10px;
   padding: 8px 10px;
   border-radius: 10px;
-  background: rgba(255,255,255,0.03);
-  border: 1px solid rgba(255,255,255,0.06);
+  background: rgba(0,0,0,0.02);
+  border: 1px solid rgba(0,0,0,0.06);
 }
 .output-file-name {
   font-size: 12px;
@@ -485,12 +532,12 @@ html, body {
   width: 26px;
   height: 26px;
   border-radius: 50%;
-  color: #8ab4f8;
-  background: rgba(138,180,248,0.1);
+  color: #1a73e8;
+  background: rgba(26,115,232,0.08);
   text-decoration: none;
   transition: background 0.15s ease;
 }
-.output-file-dl:hover { background: rgba(138,180,248,0.2); }
+.output-file-dl:hover { background: rgba(26,115,232,0.15); }
 
 /* 保存済みメモ一覧 */
 .draft-row {
@@ -505,21 +552,6 @@ html, body {
   transition: background 0.15s ease;
 }
 .draft-row:hover { background: var(--bg-sidebar-hover); }
-
-/* 推奨プロンプトチップ */
-.prompt-chip {
-  padding: 6px 14px;
-  border-radius: 100px;
-  font-size: 12px;
-  background: var(--bg-chip);
-  border: 1px solid var(--border-subtle);
-  color: var(--text-primary);
-  cursor: pointer;
-  transition: background 0.15s ease;
-  white-space: nowrap;
-  font-family: inherit;
-}
-.prompt-chip:hover { background: var(--bg-chip-hover); }
 
 /* メッセージアクション行 */
 .msg-action-btn {
@@ -536,6 +568,6 @@ html, body {
   transition: background 0.15s ease, color 0.15s ease;
   font-family: inherit;
 }
-.msg-action-btn:hover { background: rgba(255,255,255,0.06); color: var(--text-primary); }
+.msg-action-btn:hover { background: rgba(0,0,0,0.05); color: var(--text-primary); }
 .msg-action-btn.icon-only { padding: 5px; }
-.msg-action-btn.active { color: #8ab4f8; }
+.msg-action-btn.active { color: #1a73e8; }

@@ -1,15 +1,17 @@
 """
 ソース管理 APIルーター
-ファイル/メモをナレッジソースとして登録・管理し、RAG検索インデックス（documents / documents_fts）に反映する
+ファイル/メモ/パス参照/URLをナレッジソースとして登録・管理し、RAG検索インデックス（documents / documents_fts）に反映する
 """
 import os
 import re
 import json
+import html
 import sqlite3
 import hashlib
 import uuid
 from pathlib import Path
 
+import httpx
 from fastapi import APIRouter, HTTPException, UploadFile, File
 from pydantic import BaseModel
 from loguru import logger
@@ -18,11 +20,17 @@ from services.llm_client import llm_client
 
 router = APIRouter()
 
+# 実ファイルをSOURCES_DIR配下に保有しており、削除時に物理削除してよいsource_type
+MANAGED_SOURCE_TYPES = {"upload", "memo", "url"}
+VALID_PATH_SOURCE_TYPES = {"local_path", "server_path", "auto_search"}
+
 FALLBACK_SUGGESTIONS = [
     "登録されているソースの主要なポイントを要約してください。",
     "最近追加されたソースについて詳しく教えてください。",
     "ソースの内容に関するよくある質問は何ですか？",
 ]
+
+AUTO_SEARCH_LIMIT = 50
 
 DB_PATH = os.getenv("SQLITE_DB_PATH", "/data/sqlite/knowledge.db")
 SOURCES_DIR = Path(os.getenv("SOURCES_DIR", "/data/sources"))
@@ -49,10 +57,16 @@ def _ensure_storage():
                 type         TEXT NOT NULL,
                 size         INTEGER NOT NULL DEFAULT 0,
                 file_path    TEXT NOT NULL UNIQUE,
-                selected     INTEGER NOT NULL DEFAULT 1,
+                selected     INTEGER NOT NULL DEFAULT 0,
                 uploaded_at  DATETIME DEFAULT CURRENT_TIMESTAMP
             )
         """)
+        # source_type列のマイグレーション（既存DBに対する後方互換追加）
+        existing_cols = {row[1] for row in conn.execute("PRAGMA table_info(sources)").fetchall()}
+        if "source_type" not in existing_cols:
+            conn.execute("ALTER TABLE sources ADD COLUMN source_type TEXT")
+            conn.execute("UPDATE sources SET source_type = 'memo' WHERE type = 'memo' AND source_type IS NULL")
+            conn.execute("UPDATE sources SET source_type = 'upload' WHERE source_type IS NULL")
         conn.commit()
     finally:
         conn.close()
@@ -152,6 +166,17 @@ class MemoRequest(BaseModel):
     content: str
 
 
+class FromPathRequest(BaseModel):
+    path: str
+    label: str
+    source_type: str  # "local_path" | "server_path" | "auto_search"
+
+
+class FromUrlRequest(BaseModel):
+    url: str
+    label: str
+
+
 @router.get("/")
 async def list_sources():
     """登録済みソースの一覧を取得する"""
@@ -229,6 +254,46 @@ async def get_suggestions(mode: str = "auto"):
     return {"suggestions": suggestions}
 
 
+@router.get("/auto-search")
+async def auto_search(keyword: str):
+    """登録済みのwatch-paths配下を、ファイル名にkeywordを含むもの限定で再帰検索する（候補表示のみ）"""
+    keyword = keyword.strip()
+    if not keyword:
+        return {"results": []}
+
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        watch_paths = conn.execute("SELECT path, label FROM watch_paths").fetchall()
+    except sqlite3.OperationalError:
+        # settingsルーターが未ロードでテーブル未作成の場合はフォールバック
+        watch_paths = []
+    finally:
+        conn.close()
+
+    keyword_lower = keyword.lower()
+    results = []
+    for watch_path, label in watch_paths:
+        if not os.path.isdir(watch_path):
+            logger.warning(f"watch-pathが見つかりません（スキップ): {watch_path}")
+            continue
+        for root, _dirs, files in os.walk(watch_path, followlinks=True):
+            for file_name in files:
+                if keyword_lower in file_name.lower():
+                    results.append({
+                        "path": os.path.join(root, file_name),
+                        "file_name": file_name,
+                        "watch_path_label": label,
+                    })
+                    if len(results) >= AUTO_SEARCH_LIMIT:
+                        break
+            if len(results) >= AUTO_SEARCH_LIMIT:
+                break
+        if len(results) >= AUTO_SEARCH_LIMIT:
+            break
+
+    return {"results": results}
+
+
 @router.post("/upload")
 async def upload_source(file: UploadFile = File(...)):
     """ファイルをアップロードしてソースとして登録し、RAGインデックスに追加する"""
@@ -246,7 +311,7 @@ async def upload_source(file: UploadFile = File(...)):
     conn = sqlite3.connect(DB_PATH)
     try:
         cursor = conn.execute(
-            "INSERT INTO sources (name, type, size, file_path) VALUES (?, ?, ?, ?)",
+            "INSERT INTO sources (name, type, size, file_path, selected, source_type) VALUES (?, ?, ?, ?, 0, 'upload')",
             (file.filename, ALLOWED_EXTENSIONS[ext], len(content_bytes), str(dest_path)),
         )
         conn.commit()
@@ -286,20 +351,23 @@ async def update_source_selection(source_id: int, request: SelectedUpdateRequest
 
 @router.delete("/{source_id}")
 async def delete_source(source_id: int):
-    """ソースを削除し、RAGインデックスからも除外する"""
+    """ソースを削除し、RAGインデックスからも除外する（パス参照ソースの場合は実ファイルは削除しない）"""
     conn = sqlite3.connect(DB_PATH)
     try:
-        row = conn.execute("SELECT file_path FROM sources WHERE id = ?", (source_id,)).fetchone()
+        row = conn.execute(
+            "SELECT file_path, source_type FROM sources WHERE id = ?", (source_id,)
+        ).fetchone()
         if row is None:
             raise HTTPException(status_code=404, detail=f"ソースが見つかりません: id={source_id}")
         file_path = Path(row[0])
+        source_type = row[1]
         conn.execute("DELETE FROM sources WHERE id = ?", (source_id,))
         conn.commit()
     finally:
         conn.close()
 
     _unindex(file_path)
-    if file_path.exists():
+    if source_type in MANAGED_SOURCE_TYPES and file_path.exists():
         try:
             file_path.unlink()
         except OSError as e:
@@ -319,7 +387,7 @@ async def create_memo_source(request: MemoRequest):
     conn = sqlite3.connect(DB_PATH)
     try:
         cursor = conn.execute(
-            "INSERT INTO sources (name, type, size, file_path) VALUES (?, ?, ?, ?)",
+            "INSERT INTO sources (name, type, size, file_path, selected, source_type) VALUES (?, ?, ?, ?, 0, 'memo')",
             (request.title, "memo", len(request.content.encode("utf-8")), str(dest_path)),
         )
         conn.commit()
@@ -335,5 +403,108 @@ async def create_memo_source(request: MemoRequest):
         "id": row[0],
         "name": row[1],
         "type": "memo",
+        "uploaded_at": row[2],
+    }
+
+
+@router.post("/from-path")
+async def create_source_from_path(request: FromPathRequest):
+    """ファイルをコピーせず、パス参照のままソースとして登録する（ローカルPATH/ファイルサーバPATH/自動検索候補から使用）"""
+    if request.source_type not in VALID_PATH_SOURCE_TYPES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"source_typeはlocal_path/server_path/auto_searchのいずれかである必要があります: {request.source_type}",
+        )
+
+    path = request.path
+    ext = Path(path).suffix.lower()
+    type_label = ALLOWED_EXTENSIONS.get(ext, ext.lstrip(".") or "file")
+
+    size = 0
+    if os.path.isfile(path):
+        size = os.path.getsize(path)
+        if ext in ALLOWED_EXTENSIONS:
+            text = _extract_text(Path(path), ext)
+            _index_for_rag(Path(path), text)
+        else:
+            logger.warning(f"未対応の拡張子のためRAGインデックスはスキップします: {path}")
+    else:
+        logger.warning(f"パス参照ソース登録時点でファイルが見つかりません（コンテナ未マウントの可能性）: {path}")
+
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        try:
+            cursor = conn.execute(
+                "INSERT INTO sources (name, type, size, file_path, selected, source_type) VALUES (?, ?, ?, ?, 0, ?)",
+                (request.label, type_label, size, path, request.source_type),
+            )
+        except sqlite3.IntegrityError:
+            raise HTTPException(status_code=400, detail=f"このパスは既に登録されています: {path}")
+        conn.commit()
+        source_id = cursor.lastrowid
+        row = conn.execute(
+            "SELECT id, name, type, uploaded_at FROM sources WHERE id = ?", (source_id,)
+        ).fetchone()
+    finally:
+        conn.close()
+
+    logger.info(f"パス参照ソース追加: {request.label} ({path}, {request.source_type})")
+    return {
+        "id": row[0],
+        "name": row[1],
+        "type": row[2],
+        "path": path,
+        "uploaded_at": row[3],
+    }
+
+
+def _strip_html(raw_html: str) -> str:
+    """HTMLから簡易的にテキストのみを抽出する"""
+    text = re.sub(r"<(script|style)[^>]*>.*?</\1>", " ", raw_html, flags=re.DOTALL | re.IGNORECASE)
+    text = re.sub(r"<[^>]+>", " ", text)
+    text = html.unescape(text)
+    return re.sub(r"[ \t]+", " ", text).strip()
+
+
+@router.post("/from-url")
+async def create_source_from_url(request: FromUrlRequest):
+    """WEBページのURLからコンテンツを取得し、テキスト抽出してソースとして登録する"""
+    try:
+        async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
+            response = await client.get(request.url)
+            response.raise_for_status()
+    except httpx.HTTPError as e:
+        raise HTTPException(status_code=400, detail=f"URLの取得に失敗しました: {e}")
+
+    content_type = response.headers.get("content-type", "")
+    raw_text = response.text
+    text = _strip_html(raw_text) if "html" in content_type else raw_text.strip()
+
+    if not text:
+        raise HTTPException(status_code=400, detail="URLからテキストを抽出できませんでした")
+
+    dest_path = SOURCES_DIR / _safe_filename(f"{request.label}.txt")
+    dest_path.write_text(text, encoding="utf-8")
+    _index_for_rag(dest_path, text)
+
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        cursor = conn.execute(
+            "INSERT INTO sources (name, type, size, file_path, selected, source_type) VALUES (?, ?, ?, ?, 0, 'url')",
+            (request.label, "url", len(text.encode("utf-8")), str(dest_path)),
+        )
+        conn.commit()
+        source_id = cursor.lastrowid
+        row = conn.execute(
+            "SELECT id, name, uploaded_at FROM sources WHERE id = ?", (source_id,)
+        ).fetchone()
+    finally:
+        conn.close()
+
+    logger.info(f"URLソース追加: {request.label} ({request.url})")
+    return {
+        "id": row[0],
+        "name": row[1],
+        "type": "url",
         "uploaded_at": row[2],
     }

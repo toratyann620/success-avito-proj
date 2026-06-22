@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from loguru import logger
 
-from routers import chat, documents, search, voice, db_query, sources
+from routers import chat, documents, search, voice, db_query, sources, settings, output
 from services.db import init_db
 
 
@@ -34,14 +34,9 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-        "http://localhost:3001",
-        "http://127.0.0.1:3001",
-        "http://localhost:3002",
-        "http://127.0.0.1:3002",
-        "http://localhost:3003",
-        "http://127.0.0.1:3003",
+        # ポート台帳(997_開発ナレッジ/04_PORT_MANAGEMENT.md): 051_AI文書検索作成Proj は 3100-3109
+        "http://localhost:3102",
+        "http://127.0.0.1:3102",
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -55,6 +50,8 @@ app.include_router(search.router, prefix="/api/search", tags=["検索"])
 app.include_router(voice.router, prefix="/api/voice", tags=["音声認識"])
 app.include_router(db_query.router, prefix="/api/db", tags=["データベース連携"])
 app.include_router(sources.router, prefix="/api/sources", tags=["ソース管理"])
+app.include_router(settings.router, prefix="/api/settings", tags=["設定"])
+app.include_router(output.router, prefix="/api/output", tags=["出力生成"])
 
 
 @app.get("/health")

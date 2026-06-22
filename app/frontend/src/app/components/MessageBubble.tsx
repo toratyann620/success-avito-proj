@@ -3,8 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  FileSpreadsheet, FileText, Presentation,
-  Download, Lock, ChevronRight, FileUp,
+  FileText, Lock, ChevronRight, FileUp,
   Copy, Check, ThumbsUp, ThumbsDown, NotebookPen,
 } from "lucide-react";
 import type { Message, BulletItem, TableData } from "@/app/lib/mockData";
@@ -36,12 +35,12 @@ function FileBadge({ fileName }: { fileName: string }) {
     <div style={{
       display: "inline-flex", alignItems: "center", gap: 8,
       padding: "6px 12px", borderRadius: 10,
-      background: "rgba(138,180,248,0.1)",
-      border: "1px solid rgba(138,180,248,0.25)",
+      background: "rgba(26,115,232,0.1)",
+      border: "1px solid rgba(26,115,232,0.25)",
       marginBottom: 8,
     }}>
-      <FileUp size={14} style={{ color: "#8ab4f8" }} />
-      <span style={{ fontSize: 12, color: "#8ab4f8" }}>{fileName}</span>
+      <FileUp size={14} style={{ color: "var(--accent-blue)" }} />
+      <span style={{ fontSize: 12, color: "var(--accent-blue)" }}>{fileName}</span>
     </div>
   );
 }
@@ -142,54 +141,14 @@ function HtmlDashboard({ html }: { html: string }) {
       transition={{ duration: 0.4 }}
       style={{
         marginTop: 16,
-        background: "rgba(255,255,255,0.03)",
-        border: "1px solid rgba(255,255,255,0.08)",
+        background: "rgba(0,0,0,0.03)",
+        border: "1px solid rgba(0,0,0,0.08)",
         borderRadius: 16,
         padding: "20px 20px 16px",
         overflow: "hidden",
       }}
     >
       <div ref={containerRef} />
-    </motion.div>
-  );
-}
-
-/* -------- ファイルチップ -------- */
-function FileCard({ fileChip }: { fileChip: NonNullable<Message["fileChip"]> }) {
-  if (!fileChip.type) return null;
-  const cfg = {
-    excel:       { icon: <FileSpreadsheet size={22} />, color: "#34a853", bg: "rgba(52,168,83,0.12)",  border: "rgba(52,168,83,0.3)",  label: "Excel" },
-    word:        { icon: <FileText size={22} />,         color: "#4285f4", bg: "rgba(66,133,244,0.12)", border: "rgba(66,133,244,0.3)", label: "Word"  },
-    powerpoint:  { icon: <Presentation size={22} />,     color: "#ea4335", bg: "rgba(234,67,53,0.12)",  border: "rgba(234,67,53,0.3)",  label: "PowerPoint" },
-  };
-  const c = cfg[fileChip.type];
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 8 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ delay: 0.6 }}
-      className="file-card"
-      style={{ background: c.bg, border: `1px solid ${c.border}` }}
-    >
-      <div style={{ color: c.color }}>{c.icon}</div>
-      <div>
-        <div style={{ color: "#e3e3e3", fontWeight: 500, fontSize: 14 }}>{fileChip.filename}</div>
-        <div style={{ color: "#ababab", fontSize: 12, marginTop: 2 }}>{c.label} · {fileChip.size} · 生成完了</div>
-      </div>
-      <motion.a
-        href={fileChip.downloadUrl}
-        download
-        whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.96 }}
-        style={{
-          display: "flex", alignItems: "center", gap: 4,
-          marginLeft: "auto", padding: "6px 14px", borderRadius: 100,
-          background: c.color, color: "white", border: "none",
-          fontSize: 12, fontWeight: 600, cursor: "pointer",
-          textDecoration: "none",
-        }}
-      >
-        <Download size={13} /> ダウンロード
-      </motion.a>
     </motion.div>
   );
 }
@@ -206,13 +165,13 @@ function BulletsContent({ data }: { data: BulletItem[] }) {
           transition={{ delay: 0.2 + si * 0.12 }}
           style={{
             padding: 16, borderRadius: 14,
-            background: "rgba(255,255,255,0.04)",
-            border: "1px solid rgba(255,255,255,0.07)",
+            background: "rgba(0,0,0,0.04)",
+            border: "1px solid rgba(0,0,0,0.07)",
           }}
         >
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
             <span style={{ fontSize: 18 }}>{sec.icon}</span>
-            <span style={{ fontWeight: 600, color: "#e3e3e3", fontSize: 15 }}>{sec.label}</span>
+            <span style={{ fontWeight: 600, color: "var(--text-primary)", fontSize: 15 }}>{sec.label}</span>
           </div>
           <ul style={{ listStyle: "none", display: "flex", flexDirection: "column", gap: 8 }}>
             {sec.items.map((item, ii) => (
@@ -221,9 +180,9 @@ function BulletsContent({ data }: { data: BulletItem[] }) {
                 initial={{ opacity: 0, x: -6 }}
                 animate={{ opacity: 1, x: 0 }}
                 transition={{ delay: 0.3 + si * 0.12 + ii * 0.07 }}
-                style={{ display: "flex", alignItems: "flex-start", gap: 8, color: "#c8c8c8", fontSize: 14, lineHeight: 1.6 }}
+                style={{ display: "flex", alignItems: "flex-start", gap: 8, color: "var(--text-secondary)", fontSize: 14, lineHeight: 1.6 }}
               >
-                <ChevronRight size={14} style={{ color: "#8ab4f8", flexShrink: 0, marginTop: 3 }} />
+                <ChevronRight size={14} style={{ color: "var(--accent-blue)", flexShrink: 0, marginTop: 3 }} />
                 {item}
               </motion.li>
             ))}
@@ -238,7 +197,7 @@ function BulletsContent({ data }: { data: BulletItem[] }) {
 function TableContent({ data }: { data: TableData }) {
   return (
     <div style={{ marginTop: 16 }}>
-      <div style={{ borderRadius: 14, overflow: "hidden", border: "1px solid rgba(255,255,255,0.08)" }}>
+      <div style={{ borderRadius: 14, overflow: "hidden", border: "1px solid rgba(0,0,0,0.08)" }}>
         <table className="data-table">
           <thead>
             <tr>{data.headers.map((h, i) => <th key={i}>{h}</th>)}</tr>
@@ -251,14 +210,14 @@ function TableContent({ data }: { data: TableData }) {
                 transition={{ delay: 0.2 + ri * 0.08 }}
               >
                 {row.map((cell, ci) => (
-                  <td key={ci} style={{ color: ci === 0 ? "#ababab" : "#e3e3e3" }}>{cell}</td>
+                  <td key={ci} style={{ color: ci === 0 ? "var(--text-secondary)" : "var(--text-primary)" }}>{cell}</td>
                 ))}
               </motion.tr>
             ))}
           </tbody>
         </table>
       </div>
-      <p style={{ color: "#6e6e6e", fontSize: 11, marginTop: 8 }}>{data.summary}</p>
+      <p style={{ color: "var(--text-tertiary)", fontSize: 11, marginTop: 8 }}>{data.summary}</p>
     </div>
   );
 }
@@ -275,7 +234,7 @@ function RestrictedCard() {
       <Lock size={18} style={{ color: "#ea4335", flexShrink: 0, marginTop: 2 }} />
       <div>
         <div style={{ color: "#f28b82", fontWeight: 600, fontSize: 14, marginBottom: 4 }}>アクセス制限</div>
-        <div style={{ color: "#ababab", fontSize: 14, lineHeight: 1.6 }}>
+        <div style={{ color: "var(--text-secondary)", fontSize: 14, lineHeight: 1.6 }}>
           お客様の権限では機密データへのアクセスは制限されています。<br />
           管理者に承認を依頼してください。
         </div>
@@ -337,7 +296,7 @@ export function GeneratingIndicator({ label }: { label?: string }) {
               transition={{ duration: 0.25 }}
               style={{ display: "flex", alignItems: "center", gap: 8 }}
             >
-              <span style={{ fontSize: 13, color: "#8ab4f8" }}>{label}</span>
+              <span style={{ fontSize: 13, color: "var(--accent-blue)" }}>{label}</span>
             </motion.div>
           )}
         </AnimatePresence>
@@ -478,9 +437,6 @@ export function MessageBubble({
 
         {/* アクセス制限 */}
         {message.isRestricted && <RestrictedCard />}
-
-        {/* ファイルカード */}
-        {message.fileChip && <FileCard fileChip={message.fileChip} />}
 
         {/* RAG出典チップ（実データ） */}
         {message.citations && message.citations.length > 0 && (

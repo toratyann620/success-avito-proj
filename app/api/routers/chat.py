@@ -1,16 +1,34 @@
 """
 チャット / RAG APIルーター
+チャットは会話（テキスト回答）のみを担い、ファイル生成は /api/output/ に分離している。
 """
 from fastapi import APIRouter, HTTPException, UploadFile, File, Form
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from loguru import logger
 import json
+import os
+import sqlite3
 import uuid
 
 from services.rag_engine import rag_engine
 
 router = APIRouter()
+
+DB_PATH = os.getenv("SQLITE_DB_PATH", "/data/sqlite/knowledge.db")
+
+
+def _save_chat_history(session_id: str, role: str, content: str, sources: list[dict] = None):
+    """チャット履歴をDBに記録する（/api/output/ の生成元データとして使用される）"""
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        conn.execute(
+            "INSERT INTO chat_history (session_id, role, content, sources) VALUES (?, ?, ?, ?)",
+            (session_id, role, content, json.dumps(sources, ensure_ascii=False) if sources else None),
+        )
+        conn.commit()
+    finally:
+        conn.close()
 
 
 class ChatRequest(BaseModel):
@@ -18,7 +36,7 @@ class ChatRequest(BaseModel):
     session_id: str = None
     mode: str = "internal"  # "internal"（内部機密文書）or "proposal"（提案書）
     source_mode: str = "auto"  # "auto"（全ソース自動参照） or "manual"（選択ソースのみ参照）
-    selected_source_ids: list[str] = []  # 手動モード時に選択されたsources.idの一覧
+    selected_source_ids: list[int] = []  # 手動モード時に選択されたsources.idの一覧
 
 
 class ChatResponse(BaseModel):
@@ -43,6 +61,10 @@ async def chat(request: ChatRequest):
             session_id=session_id,
             source_ids=source_ids,
         )
+
+        _save_chat_history(session_id, "user", request.message)
+        _save_chat_history(session_id, "assistant", result.answer, result.citations)
+
         return ChatResponse(
             answer=result.answer,
             citations=result.citations,

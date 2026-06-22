@@ -53,7 +53,7 @@ class RAGEngine:
         self.max_context_chars = 4000  # コンテキスト最大文字数
         self.top_k = 5  # 検索結果の上位件数
 
-    def search_fts(self, query: str, top_k: int = None, source_ids: list[str] = None) -> list[SearchResult]:
+    def search_fts(self, query: str, top_k: int = None, source_ids: list[int] = None) -> list[SearchResult]:
         """FTS5全文検索でドキュメントを検索する
 
         source_ids が指定された場合（手動参照モード）、sources テーブルで
@@ -143,7 +143,7 @@ class RAGEngine:
 
         return "\n---\n".join(context_parts), sources
 
-    async def query(self, user_query: str, session_id: str = None, source_ids: list[str] = None) -> RAGResponse:
+    async def query(self, user_query: str, session_id: str = None, source_ids: list[int] = None) -> RAGResponse:
         """ユーザーの質問に対してRAG回答を生成する"""
         logger.info(f"RAGクエリ: {user_query[:50]}...")
 

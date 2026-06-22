@@ -9,24 +9,37 @@ from typing import AsyncGenerator
 from loguru import logger
 
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:3107")
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5-coder:1.5b")
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "gemma3:4b")
 OLLAMA_TIMEOUT = int(os.getenv("OLLAMA_TIMEOUT", "120"))
 DB_PATH = os.getenv("SQLITE_DB_PATH", "/data/sqlite/knowledge.db")
 
 
 def _load_model_from_db() -> str:
-    """DBに保存されたモデル設定を読み込む。なければ環境変数を使用。"""
+    """DBに保存されたモデル設定を読み込む。なければ環境変数を使用。
+
+    main.py のルーター読み込み順（chat → ... → settings）により、
+    settings.py の _ensure_settings_table() が走る前に
+    rag_engine.py 経由でこの関数が呼ばれる可能性がある（settingsテーブル未作成）。
+    そのため、ここでも CREATE TABLE IF NOT EXISTS を冪等に実行し、
+    import順に依存せずDB優先の読み込みを保証する。
+    """
     try:
         conn = sqlite3.connect(DB_PATH)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS settings (
+                key   TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            )
+        """)
         row = conn.execute(
             "SELECT value FROM settings WHERE key='ollama_model'"
         ).fetchone()
         conn.close()
-        if row:
+        if row and row[0]:
             return row[0]
     except Exception:
         pass
-    return os.getenv("OLLAMA_MODEL", "qwen2.5-coder:1.5b")
+    return os.getenv("OLLAMA_MODEL", "gemma3:4b")
 
 
 class LLMClient:

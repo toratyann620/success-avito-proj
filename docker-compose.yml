@@ -121,7 +121,7 @@ services:
       - ai-knowledge-net
     environment:
       - OLLAMA_BASE_URL=http://ollama:11434
-      - OLLAMA_MODEL=${OLLAMA_MODEL:-qwen2.5-coder:1.5b}
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-gemma3:4b}
       - SQLITE_DB_PATH=/data/sqlite/knowledge.db
       - VECTOR_STORE_PATH=/data/vector_store
       - EMBEDDING_MODEL=${EMBEDDING_MODEL:-intfloat/multilingual-e5-small}

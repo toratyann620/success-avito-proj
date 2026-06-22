@@ -494,6 +494,26 @@ function shouldUseNl2sql(message: string): boolean {
 }
 
 /* ============================
+   RAG検索起動判定
+   バックエンド(chat.py)の should_use_rag() と同一ロジック。
+   応答待ち中の「社内ナレッジをRAG検索中.../AIが回答中...」表示を
+   レスポンス受信前に決定するため、フロント側でも同じ判定を行う。
+   ============================ */
+function shouldUseRag(message: string, selectedSourceIds: number[]): boolean {
+  if (selectedSourceIds.length === 0) return false;
+
+  const skipPhrases = [
+    "修正して", "変更して", "直して", "教えて",
+    "ありがとう", "わかりました", "了解",
+    "こんにちは", "おはよう", "よろしく",
+    "出力して", "ダウンロード", "まとめて",
+  ];
+  if (message.length < 30 && skipPhrases.some((p) => message.includes(p))) return false;
+
+  return true;
+}
+
+/* ============================
    DB検索結果をHTMLテーブルへフォーマットする
    ============================ */
 function formatDbResultsToHtml(results: Record<string, unknown>[], sql: string, durationMs: number): string {
@@ -627,11 +647,6 @@ function SourcePanel({
     }}>
       <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 14, overflow: "hidden", flex: 1, minHeight: 0 }}>
 
-        {/* 設定ボタン */}
-        <button className="panel-action-btn secondary" onClick={onOpenSettings}>
-          <Settings size={16} /> 設定
-        </button>
-
         {/* ===== 手動入力セクション ===== */}
         <div style={{ display: "flex", flexDirection: "column", gap: 6, borderTop: "1px solid rgba(0,0,0,0.06)", paddingTop: 12 }}>
           <div className="source-section-label">手動入力</div>
@@ -763,6 +778,13 @@ function SourcePanel({
           </div>
           <div style={{ fontSize: 11, color: "var(--text-tertiary)" }}>チェックしたソースのみチャットで参照されます</div>
         </div>
+
+        {/* 設定ボタン（左パネル最下部に固定） */}
+        <div style={{ borderTop: "1px solid rgba(0,0,0,0.06)", paddingTop: 12 }}>
+          <button className="panel-action-btn secondary" onClick={onOpenSettings}>
+            <Settings size={16} /> 設定
+          </button>
+        </div>
       </div>
     </aside>
   );
@@ -772,6 +794,57 @@ function SourcePanel({
    設定モーダル（watch-paths管理）
    ============================ */
 function SettingsModal({ onClose }: { onClose: () => void }) {
+  const [currentModel, setCurrentModel] = useState("");
+  const [availableModels, setAvailableModels] = useState<string[]>([]);
+  const [selectedModel, setSelectedModel] = useState("");
+  const [modelLoading, setModelLoading] = useState(true);
+  const [modelSwitching, setModelSwitching] = useState(false);
+  const [modelMessage, setModelMessage] = useState<{ ok: boolean; text: string } | null>(null);
+
+  const fetchModelSettings = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/settings/model`);
+      if (!res.ok) return;
+      const data = await res.json();
+      setCurrentModel(data.current_model ?? "");
+      setAvailableModels(data.available_models ?? []);
+      setSelectedModel(data.current_model ?? "");
+    } catch (e) {
+      console.error("モデル設定取得エラー:", e);
+    } finally {
+      setModelLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- モーダルを開いたときの初回フェッチ
+    fetchModelSettings();
+  }, [fetchModelSettings]);
+
+  const handleSwitchModel = async () => {
+    if (!selectedModel || selectedModel === currentModel) return;
+    setModelSwitching(true);
+    setModelMessage(null);
+    try {
+      const res = await fetch(`${API_BASE}/api/settings/model`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ model: selectedModel }),
+      });
+      if (!res.ok) {
+        setModelMessage({ ok: false, text: "❌ モデルが見つかりません。先に ollama pull してください。" });
+        return;
+      }
+      setCurrentModel(selectedModel);
+      setModelMessage({ ok: true, text: `✅ ${selectedModel} に切り替えました` });
+    } catch (e) {
+      console.error("モデル切り替えエラー:", e);
+      setModelMessage({ ok: false, text: "❌ モデルの切り替えに失敗しました。" });
+    } finally {
+      setModelSwitching(false);
+    }
+  };
+
   const [watchPaths, setWatchPaths] = useState<WatchPath[]>([]);
   const [loading, setLoading] = useState(true);
   const [newPath, setNewPath] = useState("");
@@ -841,12 +914,44 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
         onClick={(e) => e.stopPropagation()}
       >
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
-          <h2 style={{ fontSize: 16, fontWeight: 600, color: "var(--text-primary)" }}>設定 — 自動検索対象PATH</h2>
+          <h2 style={{ fontSize: 16, fontWeight: 600, color: "var(--text-primary)" }}>設定</h2>
           <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", display: "flex" }}>
             <X size={18} style={{ color: "var(--text-secondary)" }} />
           </button>
         </div>
 
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 16, borderBottom: "1px solid rgba(0,0,0,0.08)", paddingBottom: 16 }}>
+          <div className="source-section-label">使用モデル</div>
+          {modelLoading ? (
+            <p style={{ fontSize: 13, color: "var(--text-tertiary)" }}>読み込み中...</p>
+          ) : (
+            <>
+              <p style={{ fontSize: 12, color: "var(--text-secondary)" }}>現在: {currentModel || "不明"}</p>
+              <select
+                className="memo-input"
+                value={selectedModel}
+                onChange={(e) => setSelectedModel(e.target.value)}
+              >
+                {availableModels.map((m) => (
+                  <option key={m} value={m}>{m}</option>
+                ))}
+              </select>
+              <button
+                className="panel-action-btn primary"
+                disabled={!selectedModel || selectedModel === currentModel || modelSwitching}
+                onClick={handleSwitchModel}
+              >
+                {modelSwitching ? <Loader2 size={14} className="spin" /> : "切り替える"}
+              </button>
+              {modelMessage && (
+                <div style={{ fontSize: 12, color: modelMessage.ok ? "#34a853" : "#ea4335" }}>{modelMessage.text}</div>
+              )}
+              <p style={{ fontSize: 11, color: "var(--text-tertiary)" }}>※切り替え後は応答に反映されます</p>
+            </>
+          )}
+        </div>
+
+        <div className="source-section-label" style={{ marginBottom: 8 }}>自動検索対象PATH</div>
         <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 16 }}>
           {loading ? (
             <p style={{ fontSize: 13, color: "var(--text-tertiary)" }}>読み込み中...</p>
@@ -1456,7 +1561,8 @@ export default function Page() {
       }
 
       // チャット対話RAG APIの呼び出し
-      setThinkingLabel("社内ナレッジをRAG検索中...");
+      const selectedSourceIds = sources.filter((s) => s.selected).map((s) => s.id);
+      setThinkingLabel(shouldUseRag(content, selectedSourceIds) ? "社内ナレッジをRAG検索中..." : "AIが回答中...");
 
       const resChat = await fetch(`${API_BASE}/api/chat/`, {
         method: "POST",
@@ -1466,7 +1572,7 @@ export default function Page() {
           session_id: sessionId,
           mode: role === "admin" ? "internal" : "proposal",
           source_mode: "manual",
-          selected_source_ids: sources.filter((s) => s.selected).map((s) => s.id),
+          selected_source_ids: selectedSourceIds,
         }),
       });
 
@@ -1514,6 +1620,8 @@ export default function Page() {
   if (!isLoggedIn) {
     return <LoginScreen onLogin={() => setIsLoggedIn(true)} />;
   }
+
+  const lastAssistantId = messages.filter((m) => m.role === "assistant").at(-1)?.id;
 
   return (
     <div style={{ height: "100vh", width: "100vw", display: "flex", flexDirection: "column", background: "var(--bg-base)", overflow: "hidden" }}>
@@ -1573,8 +1681,10 @@ export default function Page() {
                     <MessageBubble
                       key={msg.id}
                       message={msg}
+                      isLatestAssistant={msg.id === lastAssistantId}
                       onSaveMemo={handleSaveMessageToMemo}
                       onFeedback={handleFeedback}
+                      onSuggestClick={setInput}
                     />
                   ))}
                 </AnimatePresence>
@@ -1586,9 +1696,11 @@ export default function Page() {
             )}
           </div>
 
-          <div style={{ maxWidth: 720, width: "100%", margin: "0 auto", padding: "0 24px" }}>
-            <PromptTemplateGrid onPick={(text) => setInput(text)} />
-          </div>
+          {messages.length === 0 && (
+            <div style={{ maxWidth: 720, width: "100%", margin: "0 auto", padding: "0 24px" }}>
+              <PromptTemplateGrid onPick={(text) => setInput(text)} />
+            </div>
+          )}
 
           <ChatInputBar
             value={input}

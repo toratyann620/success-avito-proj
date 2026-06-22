@@ -3,6 +3,7 @@ Ollama / Gemma LLMクライアント
 ローカルLLMへのAPIアクセスを抽象化し、未接続時のフォールバック処理を提供する
 """
 import os
+import sqlite3
 import httpx
 from typing import AsyncGenerator
 from loguru import logger
@@ -10,6 +11,22 @@ from loguru import logger
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:3107")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5-coder:1.5b")
 OLLAMA_TIMEOUT = int(os.getenv("OLLAMA_TIMEOUT", "120"))
+DB_PATH = os.getenv("SQLITE_DB_PATH", "/data/sqlite/knowledge.db")
+
+
+def _load_model_from_db() -> str:
+    """DBに保存されたモデル設定を読み込む。なければ環境変数を使用。"""
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        row = conn.execute(
+            "SELECT value FROM settings WHERE key='ollama_model'"
+        ).fetchone()
+        conn.close()
+        if row:
+            return row[0]
+    except Exception:
+        pass
+    return os.getenv("OLLAMA_MODEL", "qwen2.5-coder:1.5b")
 
 
 class LLMClient:
@@ -17,8 +34,12 @@ class LLMClient:
 
     def __init__(self):
         self.base_url = OLLAMA_BASE_URL
-        self.model = OLLAMA_MODEL
+        self.model = _load_model_from_db()
         self.timeout = OLLAMA_TIMEOUT
+
+    def set_model(self, model: str):
+        """使用モデルを動的に切り替える（/api/settings/model から呼ばれる）"""
+        self.model = model
 
     async def chat(self, messages: list[dict], stream: bool = False) -> str:
         """チャット形式でLLMに問い合わせる"""
@@ -168,9 +189,9 @@ class LLMClient:
             )
         
         return (
-            f"「{query[:30]}」について、社内ナレッジベースを検索しました。\n\n"
-            f"現在、ローカルの LLM サーバー (Ollama) が一時的に未稼働のため、テキスト生成処理をスキップしました。\n\n"
-            f"UIのインタラクションを確認するには、ヘッダー右上の **「✨ デモモード」を ON** に切り替えてお試しください。"
+            "申し訳ありません。現在AIの応答に時間がかかっています。\n"
+            "少し待ってから再度お試しください。\n\n"
+            "※ 問題が続く場合は、管理者にお問い合わせください。"
         )
 
     async def is_available(self) -> bool:

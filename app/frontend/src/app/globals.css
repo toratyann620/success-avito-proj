@@ -571,3 +571,7 @@ html, body {
 .msg-action-btn:hover { background: rgba(0,0,0,0.05); color: var(--text-primary); }
 .msg-action-btn.icon-only { padding: 5px; }
 .msg-action-btn.active { color: #1a73e8; }
+
+.suggestion-chip:hover {
+  background: var(--bg-chip-hover) !important;
+}

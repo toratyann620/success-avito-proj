@@ -43,6 +43,32 @@ class ChatResponse(BaseModel):
     answer: str
     citations: list[dict]
     session_id: str
+    used_rag: bool = True
+
+
+def should_use_rag(message: str, selected_source_ids: list) -> bool:
+    """
+    RAG検索を実行するかどうかを判定する。
+    以下のいずれかに該当する場合はRAGをスキップしてLLMに直接回答させる:
+    1. チェックされたソースが0件（参照対象がない）
+    2. メッセージが短くて修正・確認系の指示（RAG不要）
+    3. 挨拶・一般的な質問
+    """
+    # ソースが選択されていなければRAG不要
+    if not selected_source_ids:
+        return False
+
+    # 短い修正・確認系の指示はRAG不要
+    skip_phrases = [
+        "修正して", "変更して", "直して", "教えて",
+        "ありがとう", "わかりました", "了解",
+        "こんにちは", "おはよう", "よろしく",
+        "出力して", "ダウンロード", "まとめて",
+    ]
+    if len(message) < 30 and any(p in message for p in skip_phrases):
+        return False
+
+    return True
 
 
 @router.post("/", response_model=ChatResponse)
@@ -50,25 +76,36 @@ async def chat(request: ChatRequest):
     """チャット問い合わせ（RAG回答）"""
     session_id = request.session_id or str(uuid.uuid4())
     source_ids = request.selected_source_ids if request.source_mode == "manual" else []
+    use_rag = should_use_rag(request.message, source_ids)
     logger.info(
         f"チャット受信 [session={session_id}]: {request.message[:50]}... "
-        f"(source_mode={request.source_mode}, selected_source_ids={source_ids})"
+        f"(source_mode={request.source_mode}, selected_source_ids={source_ids}, use_rag={use_rag})"
     )
 
     try:
-        result = await rag_engine.query(
-            user_query=request.message,
-            session_id=session_id,
-            source_ids=source_ids,
-        )
+        if use_rag:
+            result = await rag_engine.query(
+                user_query=request.message,
+                session_id=session_id,
+                source_ids=source_ids,
+            )
+            answer, citations = result.answer, result.citations
+        else:
+            from services.llm_client import llm_client
+            answer = await llm_client.chat([
+                {"role": "system", "content": "あなたは社内AIアシスタントです。日本語で簡潔かつ丁寧に回答してください。"},
+                {"role": "user", "content": request.message},
+            ])
+            citations = []
 
         _save_chat_history(session_id, "user", request.message)
-        _save_chat_history(session_id, "assistant", result.answer, result.citations)
+        _save_chat_history(session_id, "assistant", answer, citations)
 
         return ChatResponse(
-            answer=result.answer,
-            citations=result.citations,
+            answer=answer,
+            citations=citations,
             session_id=session_id,
+            used_rag=use_rag,
         )
     except Exception as e:
         logger.error(f"チャットエラー: {e}")

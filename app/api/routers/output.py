@@ -3,10 +3,12 @@
 チャット履歴をもとにExcel/Word/PowerPointファイルを生成する。
 ファイル生成ロジック自体は documents.py の既存関数をそのまま再利用する。
 """
+import json
 import os
+import re
 import sqlite3
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
@@ -14,7 +16,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from loguru import logger
 
-from services.llm_client import llm_client, DOCUMENT_GENERATION_PROMPT, ESTIMATE_EXTRACTION_PROMPT
+from services.llm_client import llm_client, DOCUMENT_GENERATION_PROMPT
 from routers.documents import _generate_word, _generate_excel, _generate_pptx
 
 router = APIRouter()
@@ -102,6 +104,102 @@ def _get_chat_history_text(session_id: str) -> str:
     return "\n".join(lines)
 
 
+_COMPANY_TYPES = r'(?:株式会社|有限会社|合同会社|（株）|㈱)'
+
+
+def _extract_estimate_data_from_text(history_text: str) -> dict:
+    """
+    チャット履歴のテキストから正規表現で見積書データを直接抽出する。
+    抽出できた項目だけdictに入れて返す（無ければ呼び出し側でデフォルト値を使う）。
+
+    qwen2.5-coder:1.5b は ESTIMATE_EXTRACTION_PROMPT に対して架空の値を生成し、
+    gemma3:4b はメモリ不足でクラッシュするため、Excel見積書はLLMを使わず
+    正規表現による直接抽出のみで構築する。
+    """
+    data = {}
+
+    # 顧客名: 前株（株式会社XXX 御中）/ 後株（XXX株式会社 御中）の両パターンに対応
+    m = re.search(rf'({_COMPANY_TYPES}[\w・]{{1,20}}?)\s*(?:御中|様)', history_text)
+    if not m:
+        m = re.search(rf'(?:^|[、,。\s])([\w・]{{1,20}}?{_COMPANY_TYPES})\s*(?:御中|様)', history_text)
+    if m:
+        data["to_company"] = f"{m.group(1)} 御中"
+
+    # 単価: 「単価：XX円」「単価XX円」「¥XX」「¥XX/人日」など（コロンは任意）
+    m = re.search(r'単価[：:]?\s*[¥\\]?([\d,]+)\s*円?', history_text)
+    if not m:
+        m = re.search(r'[¥\\]([\d,]+)\s*/\s*人日', history_text)
+    if m:
+        data["unit_price"] = int(m.group(1).replace(",", ""))
+
+    # 数量: 「XX人日」「XX個」「XX式」など
+    m = re.search(r'(\d+)\s*(人日|個|式|本|時間|ヶ月|か月)', history_text)
+    if m:
+        data["qty"] = int(m.group(1))
+        data["unit"] = m.group(2)
+
+    # 品目名: 「商品：〇〇」「品目：〇〇」「項目：〇〇」、または「A商品（説明）」「B商品」等
+    m = re.search(r'(?:商品|品目|項目)[：:]\s*(.+?)(?:\n|、|,|。)', history_text)
+    if not m:
+        m = re.search(r'([A-Z぀-鿿]+(?:商品|サービス|作業|導入|構築|開発)(?:（[^）]*）)?)', history_text)
+    if m:
+        data["item_name"] = m.group(1).strip().replace("（", " ").replace("）", "")
+
+    # 有効期限（コロンまたは「は」のいずれにも対応）
+    m = re.search(r'有効期限(?:[：:]|は)?\s*(.+?)(?:\n|、|,|。)', history_text)
+    if m:
+        data["valid_until"] = m.group(1).strip()
+
+    # 支払条件
+    m = re.search(r'支払条件(?:[：:]|は)?\s*(.+?)(?:\n|、|,|。)', history_text)
+    if not m:
+        m = re.search(r'(月末締め[^\n、,。]+払い)', history_text)
+    if m:
+        data["payment_terms"] = m.group(1).strip()
+
+    # 納期
+    m = re.search(r'納期(?:[：:]|は)?\s*(.+?)(?:\n|、|,|。)', history_text)
+    if m:
+        data["delivery_date"] = m.group(1).strip()
+
+    return data
+
+
+def _build_estimate_json(history_text: str) -> dict:
+    """正規表現抽出結果にデフォルト値を組み合わせてExcel生成用dictを返す"""
+    today = datetime.today()
+    extracted = _extract_estimate_data_from_text(history_text)
+
+    unit_price = extracted.get("unit_price", 0)
+    qty = extracted.get("qty", 1)
+    unit = extracted.get("unit", "式")
+    item_name = extracted.get("item_name", "要確認")
+
+    return {
+        "to_company": extracted.get("to_company", "〇〇株式会社 御中"),
+        "to_address": "",
+        "estimate_date": today.strftime("%Y-%m-%d"),
+        "estimate_no": "001",
+        "valid_until": extracted.get("valid_until", (today + timedelta(days=30)).strftime("%Y-%m-%d")),
+        "delivery_date": extracted.get("delivery_date", "要相談"),
+        "payment_terms": extracted.get("payment_terms", "月末締め翌月末払い"),
+        "from_company": "●●株式会社",
+        "from_address": "",
+        "from_tel": "",
+        "from_email": "",
+        "items": [
+            {
+                "name": item_name,
+                "qty": qty,
+                "unit": unit,
+                "unit_price": unit_price,
+                "tax_rate": 0.10,
+            }
+        ],
+        "notes": "",
+    }
+
+
 @router.post("/generate")
 async def generate_output(request: OutputGenerateRequest):
     """チャット履歴からExcel/Word/PowerPointファイルを生成する"""
@@ -117,17 +215,18 @@ async def generate_output(request: OutputGenerateRequest):
 
     logger.info(f"出力生成リクエスト: session={request.session_id}, format={request.format}")
 
-    if request.format == "excel":
-        prompt = ESTIMATE_EXTRACTION_PROMPT.format(context=history_text)
-    else:
-        prompt = DOCUMENT_GENERATION_PROMPT.format(
-            doc_type=config["doc_type_label"],
-            requirements=instruction,
-            context=history_text,
-        )
-
     try:
-        draft_content = await llm_client.generate(prompt)
+        if request.format == "excel":
+            # 正規表現で直接抽出（LLM不要・架空値生成・OOMクラッシュを回避）
+            estimate_data = _build_estimate_json(history_text)
+            draft_content = json.dumps(estimate_data, ensure_ascii=False)
+        else:
+            prompt = DOCUMENT_GENERATION_PROMPT.format(
+                doc_type=config["doc_type_label"],
+                requirements=instruction,
+                context=history_text,
+            )
+            draft_content = await llm_client.generate(prompt)
 
         file_path = config["generator"](draft_content, instruction)
         generated_path = Path(file_path)

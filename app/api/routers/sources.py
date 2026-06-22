@@ -8,6 +8,7 @@ import json
 import html
 import sqlite3
 import hashlib
+import unicodedata
 import uuid
 from pathlib import Path
 
@@ -270,7 +271,10 @@ async def auto_search(keyword: str):
     finally:
         conn.close()
 
-    keyword_lower = keyword.lower()
+    # macOSはファイル名をNFD形式（濁点・半濁点を結合文字として分離）で保存するため、
+    # Docker経由でos.walkすると「ガ」が「カ+゛(U+3099)」に分解されて返ってくる。
+    # キーワードはNFC形式で入力されるため、両者をNFKCに正規化してから比較する。
+    keyword_normalized = unicodedata.normalize("NFKC", keyword).lower()
     results = []
     for watch_path, label in watch_paths:
         if not os.path.isdir(watch_path):
@@ -278,7 +282,8 @@ async def auto_search(keyword: str):
             continue
         for root, _dirs, files in os.walk(watch_path, followlinks=True):
             for file_name in files:
-                if keyword_lower in file_name.lower():
+                file_name_normalized = unicodedata.normalize("NFKC", file_name).lower()
+                if keyword_normalized in file_name_normalized:
                     results.append({
                         "path": os.path.join(root, file_name),
                         "file_name": file_name,
@@ -417,6 +422,9 @@ async def create_source_from_path(request: FromPathRequest):
         )
 
     path = request.path
+    # path はファイルシステム上の実パス（macOSではNFD形式）のため正規化せずそのまま使う。
+    # 表示名(label)のみNFKC正規化し、auto-search結果から登録した場合の表記を揃える。
+    label = unicodedata.normalize("NFKC", request.label)
     ext = Path(path).suffix.lower()
     type_label = ALLOWED_EXTENSIONS.get(ext, ext.lstrip(".") or "file")
 
@@ -436,7 +444,7 @@ async def create_source_from_path(request: FromPathRequest):
         try:
             cursor = conn.execute(
                 "INSERT INTO sources (name, type, size, file_path, selected, source_type) VALUES (?, ?, ?, ?, 0, ?)",
-                (request.label, type_label, size, path, request.source_type),
+                (label, type_label, size, path, request.source_type),
             )
         except sqlite3.IntegrityError:
             raise HTTPException(status_code=400, detail=f"このパスは既に登録されています: {path}")
@@ -448,7 +456,7 @@ async def create_source_from_path(request: FromPathRequest):
     finally:
         conn.close()
 
-    logger.info(f"パス参照ソース追加: {request.label} ({path}, {request.source_type})")
+    logger.info(f"パス参照ソース追加: {label} ({path}, {request.source_type})")
     return {
         "id": row[0],
         "name": row[1],

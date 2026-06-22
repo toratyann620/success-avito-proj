@@ -14,7 +14,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from loguru import logger
 
-from services.llm_client import llm_client, DOCUMENT_GENERATION_PROMPT
+from services.llm_client import llm_client, DOCUMENT_GENERATION_PROMPT, ESTIMATE_EXTRACTION_PROMPT
 from routers.documents import _generate_word, _generate_excel, _generate_pptx
 
 router = APIRouter()
@@ -117,11 +117,14 @@ async def generate_output(request: OutputGenerateRequest):
 
     logger.info(f"出力生成リクエスト: session={request.session_id}, format={request.format}")
 
-    prompt = DOCUMENT_GENERATION_PROMPT.format(
-        doc_type=config["doc_type_label"],
-        requirements=instruction,
-        context=history_text,
-    )
+    if request.format == "excel":
+        prompt = ESTIMATE_EXTRACTION_PROMPT.format(context=history_text)
+    else:
+        prompt = DOCUMENT_GENERATION_PROMPT.format(
+            doc_type=config["doc_type_label"],
+            requirements=instruction,
+            context=history_text,
+        )
 
     try:
         draft_content = await llm_client.generate(prompt)

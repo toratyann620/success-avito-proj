@@ -724,7 +724,7 @@ function SourcePanel({
                   <span className="source-row-name" title={r.path}>{r.file_name}</span>
                   <button
                     className="panel-action-btn primary"
-                    style={{ padding: "4px 8px", fontSize: 11, flexShrink: 0 }}
+                    style={{ width: "auto", padding: "4px 8px", fontSize: 11, flexShrink: 0, whiteSpace: "nowrap" }}
                     disabled={addingPath === r.path}
                     onClick={() => handleAddCandidate(r)}
                   >

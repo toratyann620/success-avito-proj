@@ -70,6 +70,33 @@ class LLMClient:
         """モデル名が "claude-" で始まる場合のみAnthropic APIを使用する"""
         return self.model.startswith("claude-")
 
+    def _is_remote_ollama(self) -> bool:
+        """モデル名が 'remote/' で始まる場合、外部Ollamaを使用する"""
+        return self.model.startswith("remote/")
+
+    def _get_actual_model_name(self) -> str:
+        """'remote/' プレフィックスを除去して実際のモデル名を返す
+        例: 'remote/gemma3:12b' → 'gemma3:12b'
+        """
+        if self._is_remote_ollama():
+            return self.model[len("remote/"):]
+        return self.model
+
+    def _get_ollama_url(self) -> str:
+        """接続先OllamaのURLを返す
+        remote/モデルの場合: OLLAMA_REMOTE_URL
+        それ以外: self.ollama_base_url（既存のOLLAMA_BASE_URL）
+        """
+        if self._is_remote_ollama():
+            url = os.getenv("OLLAMA_REMOTE_URL", "")
+            if not url:
+                raise ValueError(
+                    "外部OllamaのURLが設定されていません。"
+                    "設定画面で OLLAMA_REMOTE_URL を設定してください。"
+                )
+            return url.rstrip("/")
+        return self.ollama_base_url
+
     @staticmethod
     def _split_system_message(messages: list[dict]) -> tuple[str | None, list[dict]]:
         """既存呼び出し元はsystemロールをmessagesに埋め込むため、
@@ -85,7 +112,20 @@ class LLMClient:
         """チャット形式でLLMに問い合わせる（モデル名に応じてOllama/Claudeへ振り分け）"""
         if self._is_claude_model():
             return await self._chat_claude(messages, system_prompt)
-        return await self._chat_ollama(messages, system_prompt)
+        try:
+            base_url = self._get_ollama_url()
+        except ValueError as e:
+            # remote/モデル選択中にOLLAMA_REMOTE_URLが未設定（保存後にクリアされた等）の場合、
+            # ここで例外を伝播させるとAPIが500エラーになってしまうため、フォールバック応答にする
+            logger.warning(f"外部Ollama URL未設定。フォールバック処理を実行します: {e}")
+            user_msg = messages[-1]["content"] if messages else ""
+            return self._generate_fallback_response(user_msg, "")
+        return await self._chat_ollama_with_url(
+            messages,
+            system_prompt,
+            base_url=base_url,
+            model=self._get_actual_model_name(),
+        )
 
     async def _chat_ollama(self, messages: list[dict], system_prompt: str = None) -> str:
         if system_prompt:
@@ -102,6 +142,57 @@ class LLMClient:
                 response = await client.post(
                     f"{self.ollama_base_url}/api/chat",
                     json=payload,
+                )
+                response.raise_for_status()
+                data = response.json()
+                return data["message"]["content"]
+        except Exception as e:
+            logger.warning(f"Ollama接続エラー。フォールバック処理を実行します: {e}")
+            user_msg = messages[-1]["content"] if messages else ""
+            system_msg = next((m["content"] for m in messages if m["role"] == "system"), "")
+
+            # システムプロンプトからコンテキストを抽出
+            context = ""
+            if "【参照資料】" in system_msg:
+                context = system_msg.split("【参照資料】")[-1].strip()
+
+            return self._generate_fallback_response(user_msg, context)
+
+    async def _chat_ollama_with_url(
+        self,
+        messages: list[dict],
+        system_prompt: str = None,
+        base_url: str = None,
+        model: str = None,
+    ) -> str:
+        """base_urlとmodelを引数で受け取るOllamaチャット処理
+        ローカル・外部Ollama両方で使う共通処理
+        """
+        _base_url = base_url or self.ollama_base_url
+        _model = model or self.model
+        _timeout = int(os.getenv("OLLAMA_REMOTE_TIMEOUT", "300")) \
+                   if self._is_remote_ollama() \
+                   else self.timeout
+
+        if system_prompt:
+            messages = [{"role": "system", "content": system_prompt}] + [
+                m for m in messages if m.get("role") != "system"
+            ]
+        payload = {
+            "model": _model,
+            "messages": messages,
+            "stream": False,
+        }
+        headers = {}
+        if self._is_remote_ollama():
+            headers["ngrok-skip-browser-warning"] = "true"
+
+        try:
+            async with httpx.AsyncClient(timeout=_timeout) as client:
+                response = await client.post(
+                    f"{_base_url}/api/chat",
+                    json=payload,
+                    headers=headers,
                 )
                 response.raise_for_status()
                 data = response.json()
@@ -178,7 +269,16 @@ class LLMClient:
         """シンプルなプロンプト生成（モデル名に応じてOllama/Claudeへ振り分け）"""
         if self._is_claude_model():
             return await self._generate_claude(prompt)
-        return await self._generate_ollama(prompt)
+        try:
+            base_url = self._get_ollama_url()
+        except ValueError as e:
+            logger.warning(f"外部Ollama URL未設定。フォールバック処理を実行します: {e}")
+            return self._generate_fallback_response(prompt, "")
+        return await self._generate_ollama_with_url(
+            prompt,
+            base_url=base_url,
+            model=self._get_actual_model_name(),
+        )
 
     async def _generate_ollama(self, prompt: str) -> str:
         payload = {
@@ -191,6 +291,43 @@ class LLMClient:
                 response = await client.post(
                     f"{self.ollama_base_url}/api/generate",
                     json=payload,
+                )
+                response.raise_for_status()
+                return response.json()["response"]
+        except Exception as e:
+            logger.warning(f"Ollama接続エラー (generate)。フォールバック処理を実行します: {e}")
+            return self._generate_fallback_response(prompt, "")
+
+    async def _generate_ollama_with_url(
+        self,
+        prompt: str,
+        base_url: str = None,
+        model: str = None,
+        timeout: int = None,
+    ) -> str:
+        """base_urlとmodelを引数で受け取るOllama generate処理"""
+        _base_url = base_url or self.ollama_base_url
+        _model = model or self.model
+        _timeout = timeout or (
+            int(os.getenv("OLLAMA_REMOTE_TIMEOUT", "300"))
+            if self._is_remote_ollama()
+            else self.timeout
+        )
+        payload = {
+            "model": _model,
+            "prompt": prompt,
+            "stream": False,
+        }
+        headers = {}
+        if self._is_remote_ollama():
+            headers["ngrok-skip-browser-warning"] = "true"
+
+        try:
+            async with httpx.AsyncClient(timeout=_timeout) as client:
+                response = await client.post(
+                    f"{_base_url}/api/generate",
+                    json=payload,
+                    headers=headers,
                 )
                 response.raise_for_status()
                 return response.json()["response"]

@@ -64,6 +64,22 @@ def _ensure_settings_table():
 _ensure_settings_table()
 
 
+def _load_remote_url_from_db():
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        row = conn.execute(
+            "SELECT value FROM settings WHERE key='ollama_remote_url'"
+        ).fetchone()
+        conn.close()
+        if row and row[0]:
+            os.environ["OLLAMA_REMOTE_URL"] = row[0]
+    except Exception:
+        pass
+
+
+_load_remote_url_from_db()
+
+
 class WatchPathRequest(BaseModel):
     path: str
     label: str
@@ -97,6 +113,19 @@ async def _fetch_available_models() -> list[str]:
     except Exception as e:
         logger.warning(f"Ollamaモデル一覧取得エラー: {e}")
 
+    remote_url = os.getenv("OLLAMA_REMOTE_URL", "")
+    if remote_url:
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                res = await client.get(
+                    f"{remote_url.rstrip('/')}/api/tags",
+                    headers={"ngrok-skip-browser-warning": "true"},
+                )
+                for m in res.json().get("models", []):
+                    ollama_models.append(f"remote/{m['name']}")
+        except Exception as e:
+            logger.warning(f"外部Ollama ({remote_url}) への接続に失敗: {e}")
+
     return ollama_models + _get_claude_models()
 
 
@@ -124,6 +153,13 @@ async def update_model_settings(request: ModelUpdateRequest):
                 f"モデルが見つかりません: {request.model}"
                 "（ANTHROPIC_API_KEYが未設定、または対応していないモデル名です）"
             )
+        elif request.model.startswith("remote/"):
+            if not os.getenv("OLLAMA_REMOTE_URL", ""):
+                raise HTTPException(
+                    status_code=400,
+                    detail="外部OllamaのURLが設定されていません。設定画面でURLを入力してください。",
+                )
+            detail = f"外部Ollamaモデルが見つかりません: {request.model}"
         else:
             detail = f"モデルが見つかりません: {request.model}（先に `ollama pull {request.model}` を実行してください）"
         raise HTTPException(status_code=400, detail=detail)
@@ -211,3 +247,56 @@ async def delete_watch_path(watch_path_id: int):
         conn.close()
 
     return {"deleted": True}
+
+
+class RemoteUrlRequest(BaseModel):
+    url: str
+
+
+@router.get("/remote-url")
+async def get_remote_url():
+    """外部OllamaのURLと接続状態を返す"""
+    url = os.getenv("OLLAMA_REMOTE_URL", "")
+    connected = False
+    if url:
+        try:
+            async with httpx.AsyncClient(timeout=5) as client:
+                res = await client.get(
+                    f"{url.rstrip('/')}/api/tags",
+                    headers={"ngrok-skip-browser-warning": "true"},
+                )
+                connected = res.status_code == 200
+        except Exception:
+            connected = False
+    return {"url": url, "connected": connected}
+
+
+@router.patch("/remote-url")
+async def update_remote_url(request: RemoteUrlRequest):
+    """外部OllamaのURLを保存してリアルタイム反映する"""
+    url = request.url.strip()
+
+    # URLの形式検証
+    if url and not (url.startswith("http://") or url.startswith("https://")):
+        raise HTTPException(
+            status_code=400,
+            detail="URLは http:// または https:// で始まる必要があります",
+        )
+
+    # DBに保存
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        conn.execute(
+            "INSERT INTO settings (key, value) VALUES ('ollama_remote_url', ?) "
+            "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            (url,),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    # リアルタイム反映
+    os.environ["OLLAMA_REMOTE_URL"] = url
+
+    logger.info(f"外部OllamaのURLを設定しました: {url}")
+    return {"url": url, "message": "外部OllamaのURLを設定しました"}

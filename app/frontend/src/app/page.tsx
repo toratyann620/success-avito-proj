@@ -801,6 +801,12 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
   const [modelSwitching, setModelSwitching] = useState(false);
   const [modelMessage, setModelMessage] = useState<{ ok: boolean; text: string } | null>(null);
 
+  // 外部Ollama用ステート
+  const [remoteUrl, setRemoteUrl] = useState("");
+  const [checkingRemote, setCheckingRemote] = useState(false);
+  const [savingRemote, setSavingRemote] = useState(false);
+  const [remoteMessage, setRemoteMessage] = useState<{ ok: boolean; text: string } | null>(null);
+
   const fetchModelSettings = useCallback(async () => {
     try {
       const res = await fetch(`${API_BASE}/api/settings/model`);
@@ -816,10 +822,22 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
     }
   }, []);
 
+  const fetchRemoteUrl = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/settings/remote-url`);
+      if (!res.ok) return;
+      const data = await res.json();
+      setRemoteUrl(data.url ?? "");
+    } catch (e) {
+      console.error("外部Ollama URL取得エラー:", e);
+    }
+  }, []);
+
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- モーダルを開いたときの初回フェッチ
     fetchModelSettings();
-  }, [fetchModelSettings]);
+    fetchRemoteUrl();
+  }, [fetchModelSettings, fetchRemoteUrl]);
 
   const handleSwitchModel = async () => {
     if (!selectedModel || selectedModel === currentModel) return;
@@ -842,6 +860,55 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
       setModelMessage({ ok: false, text: "❌ モデルの切り替えに失敗しました。" });
     } finally {
       setModelSwitching(false);
+    }
+  };
+
+  const handleCheckRemote = async () => {
+    setCheckingRemote(true);
+    setRemoteMessage(null);
+    try {
+      const res = await fetch(`${API_BASE}/api/settings/remote-url`);
+      if (!res.ok) {
+        setRemoteMessage({ ok: false, text: "❌ 接続失敗（URLを確認してください）" });
+        return;
+      }
+      const data = await res.json();
+      if (data.connected) {
+        setRemoteMessage({ ok: true, text: "✅ 接続成功（モデル一覧を再取得）" });
+        await fetchModelSettings();
+      } else {
+        setRemoteMessage({ ok: false, text: "❌ 接続失敗（URLを確認してください）" });
+      }
+    } catch (e) {
+      console.error("接続確認エラー:", e);
+      setRemoteMessage({ ok: false, text: "❌ 接続失敗（URLを確認してください）" });
+    } finally {
+      setCheckingRemote(false);
+    }
+  };
+
+  const handleSaveRemote = async () => {
+    if (savingRemote) return;
+    setSavingRemote(true);
+    setRemoteMessage(null);
+    try {
+      const res = await fetch(`${API_BASE}/api/settings/remote-url`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: remoteUrl }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setRemoteMessage({ ok: false, text: `❌ 保存失敗: ${data.detail || "URLを確認してください"}` });
+        return;
+      }
+      setRemoteMessage({ ok: true, text: "✅ 保存しました" });
+      await fetchModelSettings();
+    } catch (e) {
+      console.error("URL保存エラー:", e);
+      setRemoteMessage({ ok: false, text: "❌ 保存失敗" });
+    } finally {
+      setSavingRemote(false);
     }
   };
 
@@ -933,7 +1000,13 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
                 onChange={(e) => setSelectedModel(e.target.value)}
               >
                 {availableModels.map((m) => (
-                  <option key={m} value={m}>{m.startsWith("claude-") ? `☁️ ${m}（外部API）` : m}</option>
+                  <option key={m} value={m}>
+                    {m.startsWith("claude-") 
+                      ? `☁️ ${m}（Claude API）` 
+                      : m.startsWith("remote/") 
+                        ? `🌐 ${m.replace("remote/", "")}（Colab）` 
+                        : `💻 ${m}（ローカル）`}
+                  </option>
                 ))}
               </select>
               {selectedModel.startsWith("claude-") && (
@@ -944,6 +1017,15 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
                 }}>
                   ⚠️ このモデルを選択すると、チャット内容・参照資料がAnthropicのクラウドAPIへ送信されます。
                   本システムの「完全ローカル・閉域網動作」の前提から外れるため、機密情報の取り扱いに注意してください。
+                </div>
+              )}
+              {selectedModel.startsWith("remote/") && (
+                <div style={{
+                  fontSize: 11.5, color: "#ea4335", background: "rgba(234,67,53,0.08)",
+                  border: "1px solid rgba(234,67,53,0.25)", borderRadius: 8, padding: "8px 10px",
+                  lineHeight: 1.5,
+                }}>
+                  ⚠️ チャット内容が外部サーバー（Google Colab）に送信されます。
                 </div>
               )}
               <button
@@ -959,6 +1041,38 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
               <p style={{ fontSize: 11, color: "var(--text-tertiary)" }}>※切り替え後は応答に反映されます</p>
             </>
           )}
+
+          {/* 外部Ollama URL設定セクション */}
+          <div style={{ borderTop: "1px solid rgba(0,0,0,0.08)", paddingTop: 14, marginTop: 8, display: "flex", flexDirection: "column", gap: 8 }}>
+            <div className="source-section-label">外部Ollama（Google Colab等）</div>
+            <input
+              className="memo-input"
+              placeholder="https://xxxx.ngrok-free.app"
+              value={remoteUrl}
+              onChange={(e) => setRemoteUrl(e.target.value)}
+            />
+            <div style={{ display: "flex", gap: 8 }}>
+              <button
+                className="panel-action-btn secondary"
+                style={{ flex: 1 }}
+                disabled={checkingRemote}
+                onClick={handleCheckRemote}
+              >
+                {checkingRemote ? <Loader2 size={14} className="spin" /> : "接続確認"}
+              </button>
+              <button
+                className="panel-action-btn primary"
+                style={{ flex: 1 }}
+                disabled={savingRemote}
+                onClick={handleSaveRemote}
+              >
+                {savingRemote ? <Loader2 size={14} className="spin" /> : "保存"}
+              </button>
+            </div>
+            {remoteMessage && (
+              <div style={{ fontSize: 12, color: remoteMessage.ok ? "#34a853" : "#ea4335" }}>{remoteMessage.text}</div>
+            )}
+          </div>
         </div>
 
         <div className="source-section-label" style={{ marginBottom: 8 }}>自動検索対象PATH</div>

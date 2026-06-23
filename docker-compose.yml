@@ -129,6 +129,8 @@ services:
       - BRAVE_SEARCH_API_KEY=${BRAVE_SEARCH_API_KEY:-}
       - BRAVE_SEARCH_ENABLED=${BRAVE_SEARCH_ENABLED:-false}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - OLLAMA_REMOTE_URL=${OLLAMA_REMOTE_URL:-}
+      - OLLAMA_REMOTE_TIMEOUT=${OLLAMA_REMOTE_TIMEOUT:-300}
     depends_on:
       - ollama
     restart: unless-stopped

@@ -168,6 +168,10 @@ SQLITE_DB_PATH=/data/sqlite/knowledge.db
 VECTOR_STORE_PATH=/data/vector_store
 EMBEDDING_MODEL=intfloat/multilingual-e5-small
 RAG_BACKEND=vector  # "fts5"でFTS5フォールバックに切替可能（安全装置・要コンテナ再作成）
+
+# ----- 外部Ollama（Google Colab） -----
+OLLAMA_REMOTE_URL=  # ngrok経由の外部Ollama接続URL
+OLLAMA_REMOTE_TIMEOUT=300
 ```
 
 ---
@@ -213,6 +217,12 @@ RAG_BACKEND=vector  # "fts5"でFTS5フォールバックに切替可能（安全
 - **初期化失敗時のフェイルセーフ（Claude Codeブラッシュアップで追加）**: `vector_engine.py::VectorEngine.__init__()` は当初、Embeddingモデルロード等に失敗すると例外を再raiseしていたが、`rag_engine.py` がモジュールimport時点で `vector_engine` をimportしているため、**初期化失敗時にAPI全体が起動不能になる**（`RAG_BACKEND=fts5` のフォールバックすら使えなくなる）という重大なリスクがあった。`self.index=None` のまま握って非致命化し、各メソッド（`index_document`/`remove_document`/`search`）側で未初期化時に安全に縮退動作（ログ警告＋空リスト/早期return）するように修正済み。
 - **`should_use_rag()` とのフレーズ競合（既知の制約）**: `should_use_rag()`（`chat.py`、変更禁止）の `skip_phrases` に含まれる `"教えて"` は、`"5月が赤字の原因を教えてください"` のような**具体的な内容を問う質問にも誤マッチし、RAGをスキップしてしまう**。受け入れ基準のテスト文言そのものがこの影響を受けるため、動作確認時は `"...教えて"` を含まない言い回し（例:「5月の損失の主な原因は何ですか」）を使うこと。`should_use_rag()` 自体は「直近で実装・検証済み」のため本改修では変更していない。
 - **検索精度と生成精度の切り分け**: ベクトル検索自体は正しく機能しており、関連チャンクを類似度0.7前後で正確に取得できることを確認済み（例:「4月の売上はいくらですか」→`13,670,324円`の行を含むチャンクをスコア0.70で取得）。一方、`qwen2.5-coder:1.5b`（コード特化・1.5Bパラメータの軽量モデル）は日本語の財務文書読解・多桁数値の転記精度に限界があり、同じ質問でも生成結果が`13,670,324`→`1,670,324`のように桁を欠落させる、または中国語混じりの文章を生成することがある。これは**検索（vector_engine.py）の不具合ではなく、生成モデル側の能力的な限界**。回答精度を上げたい場合はモデル切替UI（`gemma3:12b`等、ただし8GB RAM環境ではOOMリスクあり）で対応すること。
+
+### ☁️🌐 外部LLM対応（Claude API / 外部Ollama）
+- モデル名のプレフィックスでバックエンドを判定する: `claude-`始まり→Claude API、`remote/`始まり→外部Ollama（`OLLAMA_REMOTE_URL`）、それ以外→ローカルOllama。
+- いずれも選択時に「外部送信が発生する」警告UIが出る**オプトイン機能**（CLAUDE.mdの「完全ローカル・閉域網動作」の絶対要件に対する明示的な例外）。本番環境ではローカルOllamaのみに戻すこと。
+- **修正済みバグ（Claude Codeブラッシュアップで修正）**: `_get_ollama_url()` は `remote/` モデル選択中に `OLLAMA_REMOTE_URL` が未設定（例: 設定画面でURLを空にして保存した後）だと `ValueError` を投げる仕様だが、この呼び出しが `chat()`/`generate()` 内で引数評価時（try-exceptの外）に行われていたため、例外がそのまま伝播し `/api/chat/` が500エラーになるバグがあった。`chat()`/`generate()` 側で `_get_ollama_url()` の呼び出しをtry-exceptで囲み、失敗時はフォールバック応答を返すよう修正済み。
+- 外部Ollama（Google Colab+ngrok）は本物のトンネルでの実機検証（チャット応答の実取得）が未実施。`docs/Colab_Ollama_セットアップ手順.md` の手順で接続後、設定画面から動作確認すること。
 
 ### 🔒 セキュリティ設計（変更禁止）
 NL2SQL の安全性は以下の **二重防御**で担保しており、絶対に緩和しないこと：
@@ -314,6 +324,8 @@ docker compose restart api
 | GET | `/api/settings/watch-paths` | 自動検索対象パス一覧取得 |
 | POST | `/api/settings/watch-paths` | 自動検索対象パスの登録（コンテナ内パスが必要） |
 | DELETE | `/api/settings/watch-paths/{id}` | 自動検索対象パスの登録解除 |
+| GET | `/api/settings/remote-url` | 外部Ollama URLおよび接続状態取得 |
+| PATCH | `/api/settings/remote-url` | 外部Ollama URLの設定・DB保存・リアルタイム反映 |
 | POST | `/api/output/generate` | チャット履歴からExcel/Word/PowerPointファイルを生成 |
 | GET | `/api/output/files` | セッションの生成済み出力ファイル一覧取得 |
 | GET | `/api/output/download/{file_id}` | 生成済み出力ファイルのダウンロード |
@@ -325,6 +337,7 @@ docker compose restart api
 | 機能 | ステータス | 備考 |
 |:---|:---:|:---|
 | RAGベクトル検索・チャット回答 | ✅ 完了 | LlamaIndex + ChromaDB + e5-small + Ollama。`RAG_BACKEND=fts5`でFTS5フォールバックに切替可能 |
+| 外部Ollama（Google Colab）対応 | ✅ 完了 | `remote/`プレフィックスのモデル名で判定。設定画面のURL入力・接続確認・保存・モデル一覧反映まで実装済み。本物のColab+ngrok接続でのチャット応答（受け入れ基準#7）は実機検証未実施 |
 | ファイル監視・自動インデクシング | ✅ 完了 | watchdog + ポーリング(300秒) |
 | 音声認識 (Whisper) | ✅ 完了 | tiny モデル / 日本語対応 |
 | Word/Excel/PPT自動生成 | ✅ 完了 | python-docx/openpyxl/python-pptx |
@@ -343,12 +356,13 @@ docker compose restart api
 
 ## 10. 次のステップ（将来的な課題）
 
-**完了済み（ステップ1〜5）**:
+**完了済み（ステップ1〜6）**:
 - ステップ1: 設定API（watch-paths）・ソース自動検索API（auto-search）
 - ステップ2: チャット履歴からのファイル出力API（`/api/output/*`）とチャット/出力の機能分離
 - ステップ3: パス参照型ソース登録API（`from-path`/`from-url`）と左パネルの手動＋自動入力UI統合
 - ステップ4: 中央エリアのプロンプトテンプレート4×2グリッド化、右パネルの「出力」改称・6ボックス化、ファイルチップ廃止
-- ステップ5: **LlamaIndexベクトル検索の実装**（Antigravity一次実装 → Claude Codeブラッシュアップ）。SQLite FTS5キーワード検索から、ChromaDB永続化 + `intfloat/multilingual-e5-small` によるベクトル（意味）検索へ移行。`RAG_BACKEND`環境変数でFTS5への即時ロールバックが可能な安全装置付き。受け入れ基準10項目のうち、検索・インデックス連動・バックエンド切替・既存機能非破壊（Excel/NL2SQL/モデル切替）は実機検証済み。回答に特定の単語（例:「減価償却費」）や多桁の数値が正確に含まれるかは、検索結果の妥当性とは別に`qwen2.5-coder:1.5b`の生成精度に依存するため、上記「検索精度と生成精度の切り分け」を参照のこと。
+- ステップ5: **LlamaIndexベクトル検索の実装**（Antigravity一次実装 → Claude Codeブラッシュアップ）。SQLite FTS5キーワード検索から、ChromaDB永続化 + `intfloat/multilingual-e5-small` によるベクトル（意味）検索へ移行。`RAG_BACKEND`環境変数でFTS5への即時ロールバックが可能な安全装置付き。
+- ステップ6: **外部Ollama（Google Colab）対応**。プレフィックス `remote/` モデル対応、OLLAMA_REMOTE_URL の接続確認・DB保存設定、設定UI（接続テスト・警告表示）、およびタイムアウト制御の追加。
 
 **残課題**:
 1. **プロンプトボックス5〜8（カスタム追加）の設定連携**: 現在は空枠のみ。ユーザーが独自のプロンプトテンプレートを登録・編集できる設定UI・APIが必要。

@@ -128,6 +128,7 @@ services:
       - RAG_BACKEND=${RAG_BACKEND:-vector}
       - BRAVE_SEARCH_API_KEY=${BRAVE_SEARCH_API_KEY:-}
       - BRAVE_SEARCH_ENABLED=${BRAVE_SEARCH_ENABLED:-false}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
     depends_on:
       - ollama
     restart: unless-stopped

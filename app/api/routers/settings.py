@@ -73,17 +73,31 @@ class ModelUpdateRequest(BaseModel):
     model: str
 
 
+# ANTHROPIC_API_KEY が設定されている場合のみ選択肢に追加するClaudeモデル一覧。
+# 選択すると会話内容がAnthropicのクラウドAPIへ送信される（完全ローカル要件のオプトイン例外）。
+CLAUDE_MODELS = ["claude-haiku-4-5-20251001", "claude-sonnet-4-6"]
+
+
+def _get_claude_models() -> list[str]:
+    """ANTHROPIC_API_KEYが設定されている場合のみClaudeモデルの選択肢を返す"""
+    if os.getenv("ANTHROPIC_API_KEY", "").startswith("sk-ant-"):
+        return CLAUDE_MODELS
+    return []
+
+
 async def _fetch_available_models() -> list[str]:
-    """Ollamaにインストール済みのモデル名一覧を取得する"""
+    """Ollamaにインストール済みのモデル名一覧 + （設定時のみ）Claudeモデルを取得する"""
+    ollama_models = []
     try:
         async with httpx.AsyncClient(timeout=10) as client:
-            res = await client.get(f"{llm_client.base_url}/api/tags")
+            res = await client.get(f"{llm_client.ollama_base_url}/api/tags")
             res.raise_for_status()
             data = res.json()
-            return [m["name"] for m in data.get("models", [])]
+            ollama_models = [m["name"] for m in data.get("models", [])]
     except Exception as e:
         logger.warning(f"Ollamaモデル一覧取得エラー: {e}")
-        return []
+
+    return ollama_models + _get_claude_models()
 
 
 @router.get("/model")
@@ -102,13 +116,17 @@ async def get_model_settings():
 
 @router.patch("/model")
 async def update_model_settings(request: ModelUpdateRequest):
-    """使用するOllamaモデルを切り替える"""
+    """使用するモデルを切り替える（Ollamaモデル、または設定済みの場合のみClaudeモデル）"""
     available_models = await _fetch_available_models()
     if request.model not in available_models:
-        raise HTTPException(
-            status_code=400,
-            detail=f"モデルが見つかりません: {request.model}（先に `ollama pull {request.model}` を実行してください）",
-        )
+        if request.model.startswith("claude-"):
+            detail = (
+                f"モデルが見つかりません: {request.model}"
+                "（ANTHROPIC_API_KEYが未設定、または対応していないモデル名です）"
+            )
+        else:
+            detail = f"モデルが見つかりません: {request.model}（先に `ollama pull {request.model}` を実行してください）"
+        raise HTTPException(status_code=400, detail=detail)
 
     conn = sqlite3.connect(DB_PATH)
     try:

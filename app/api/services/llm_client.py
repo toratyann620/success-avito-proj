@@ -1,6 +1,14 @@
 """
-Ollama / Gemma LLMクライアント
-ローカルLLMへのAPIアクセスを抽象化し、未接続時のフォールバック処理を提供する
+Ollama / Gemma / Claude LLMクライアント
+ローカルLLM(Ollama)へのAPIアクセスを抽象化し、未接続時のフォールバック処理を提供する。
+
+⚠️ モデル名が "claude-" で始まる場合のみ Anthropic API（クラウド）を使用する。
+   本プロジェクトは CLAUDE.md に「完全ローカル・閉域網動作」が明記されており、
+   Claude API利用時はチャット内容・参照資料がAnthropicのクラウドAPIへ送信される
+   （閉域網要件と矛盾する）。そのためデフォルトでは使用せず、設定画面で
+   ANTHROPIC_API_KEY が設定されている場合のみ選択肢として表示し、選択時には
+   フロントエンドで「外部送信が発生する」警告を表示する運用としている
+   （settings.py / page.tsx 側のオプトインUIと対になる実装）。
 """
 import os
 import sqlite3
@@ -8,9 +16,12 @@ import httpx
 from typing import AsyncGenerator
 from loguru import logger
 
-OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:3107")
+try:
+    from anthropic import AsyncAnthropic
+except ImportError:
+    AsyncAnthropic = None
+
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "gemma3:4b")
-OLLAMA_TIMEOUT = int(os.getenv("OLLAMA_TIMEOUT", "120"))
 DB_PATH = os.getenv("SQLITE_DB_PATH", "/data/sqlite/knowledge.db")
 
 
@@ -43,28 +54,53 @@ def _load_model_from_db() -> str:
 
 
 class LLMClient:
-    """Ollama LLMクライアント（フォールバック機能付き）"""
+    """Ollama / Claude LLMクライアント（フォールバック機能付き）"""
 
     def __init__(self):
-        self.base_url = OLLAMA_BASE_URL
         self.model = _load_model_from_db()
-        self.timeout = OLLAMA_TIMEOUT
+        self.ollama_base_url = os.getenv("OLLAMA_BASE_URL", "http://ollama:11434")
+        self.timeout = int(os.getenv("OLLAMA_TIMEOUT", "600"))
+        self.anthropic_api_key = os.getenv("ANTHROPIC_API_KEY", "")
 
     def set_model(self, model: str):
         """使用モデルを動的に切り替える（/api/settings/model から呼ばれる）"""
         self.model = model
 
-    async def chat(self, messages: list[dict], stream: bool = False) -> str:
-        """チャット形式でLLMに問い合わせる"""
+    def _is_claude_model(self) -> bool:
+        """モデル名が "claude-" で始まる場合のみAnthropic APIを使用する"""
+        return self.model.startswith("claude-")
+
+    @staticmethod
+    def _split_system_message(messages: list[dict]) -> tuple[str | None, list[dict]]:
+        """既存呼び出し元はsystemロールをmessagesに埋め込むため、
+        Claude Messages API向けに system パラメータへ分離する
+        （Anthropic APIはmessages配列内に role="system" を受け付けない）。
+        """
+        system_texts = [m["content"] for m in messages if m.get("role") == "system"]
+        rest = [m for m in messages if m.get("role") != "system"]
+        system = "\n\n".join(system_texts) if system_texts else None
+        return system, rest
+
+    async def chat(self, messages: list[dict], system_prompt: str = None, **kwargs) -> str:
+        """チャット形式でLLMに問い合わせる（モデル名に応じてOllama/Claudeへ振り分け）"""
+        if self._is_claude_model():
+            return await self._chat_claude(messages, system_prompt)
+        return await self._chat_ollama(messages, system_prompt)
+
+    async def _chat_ollama(self, messages: list[dict], system_prompt: str = None) -> str:
+        if system_prompt:
+            messages = [{"role": "system", "content": system_prompt}] + [
+                m for m in messages if m.get("role") != "system"
+            ]
         payload = {
             "model": self.model,
             "messages": messages,
-            "stream": stream,
+            "stream": False,
         }
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
                 response = await client.post(
-                    f"{self.base_url}/api/chat",
+                    f"{self.ollama_base_url}/api/chat",
                     json=payload,
                 )
                 response.raise_for_status()
@@ -74,16 +110,41 @@ class LLMClient:
             logger.warning(f"Ollama接続エラー。フォールバック処理を実行します: {e}")
             user_msg = messages[-1]["content"] if messages else ""
             system_msg = next((m["content"] for m in messages if m["role"] == "system"), "")
-            
+
             # システムプロンプトからコンテキストを抽出
             context = ""
             if "【参照資料】" in system_msg:
                 context = system_msg.split("【参照資料】")[-1].strip()
-            
+
             return self._generate_fallback_response(user_msg, context)
 
+    async def _chat_claude(self, messages: list[dict], system_prompt: str = None) -> str:
+        extracted_system, claude_messages = self._split_system_message(messages)
+        system = system_prompt or extracted_system
+
+        if not self.anthropic_api_key or AsyncAnthropic is None:
+            logger.warning("ANTHROPIC_API_KEYが未設定のためClaude APIを利用できません。フォールバック処理を実行します。")
+            user_msg = claude_messages[-1]["content"] if claude_messages else ""
+            return self._generate_fallback_response(user_msg, "")
+
+        try:
+            client = AsyncAnthropic(api_key=self.anthropic_api_key, timeout=60.0)
+            kwargs = {
+                "model": self.model,
+                "max_tokens": 2048,
+                "messages": claude_messages,
+            }
+            if system:
+                kwargs["system"] = system
+            response = await client.messages.create(**kwargs)
+            return response.content[0].text
+        except Exception as e:
+            logger.warning(f"Claude API接続エラー。フォールバック処理を実行します: {e}")
+            user_msg = claude_messages[-1]["content"] if claude_messages else ""
+            return self._generate_fallback_response(user_msg, "")
+
     async def chat_stream(self, messages: list[dict]) -> AsyncGenerator[str, None]:
-        """ストリーミングでLLMの回答を取得する"""
+        """ストリーミングでLLMの回答を取得する（Ollamaのみ対応。Claudeモデル選択時は非対応）"""
         import json
         payload = {
             "model": self.model,
@@ -94,7 +155,7 @@ class LLMClient:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
                 async with client.stream(
                     "POST",
-                    f"{self.base_url}/api/chat",
+                    f"{self.ollama_base_url}/api/chat",
                     json=payload,
                 ) as response:
                     async for line in response.aiter_lines():
@@ -109,12 +170,17 @@ class LLMClient:
             context = ""
             if "【参照資料】" in system_msg:
                 context = system_msg.split("【参照資料】")[-1].strip()
-            
+
             fallback_text = self._generate_fallback_response(user_msg, context)
             yield fallback_text
 
     async def generate(self, prompt: str) -> str:
-        """シンプルなプロンプト生成"""
+        """シンプルなプロンプト生成（モデル名に応じてOllama/Claudeへ振り分け）"""
+        if self._is_claude_model():
+            return await self._generate_claude(prompt)
+        return await self._generate_ollama(prompt)
+
+    async def _generate_ollama(self, prompt: str) -> str:
         payload = {
             "model": self.model,
             "prompt": prompt,
@@ -123,13 +189,30 @@ class LLMClient:
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
                 response = await client.post(
-                    f"{self.base_url}/api/generate",
+                    f"{self.ollama_base_url}/api/generate",
                     json=payload,
                 )
                 response.raise_for_status()
                 return response.json()["response"]
         except Exception as e:
             logger.warning(f"Ollama接続エラー (generate)。フォールバック処理を実行します: {e}")
+            return self._generate_fallback_response(prompt, "")
+
+    async def _generate_claude(self, prompt: str) -> str:
+        if not self.anthropic_api_key or AsyncAnthropic is None:
+            logger.warning("ANTHROPIC_API_KEYが未設定のためClaude APIを利用できません。フォールバック処理を実行します。")
+            return self._generate_fallback_response(prompt, "")
+
+        try:
+            client = AsyncAnthropic(api_key=self.anthropic_api_key, timeout=60.0)
+            response = await client.messages.create(
+                model=self.model,
+                max_tokens=1500,
+                messages=[{"role": "user", "content": prompt}],
+            )
+            return response.content[0].text
+        except Exception as e:
+            logger.warning(f"Claude API接続エラー (generate)。フォールバック処理を実行します: {e}")
             return self._generate_fallback_response(prompt, "")
 
     def _generate_fallback_response(self, query: str, context: str) -> str:
@@ -211,7 +294,7 @@ class LLMClient:
         """Ollamaが利用可能かチェック"""
         try:
             async with httpx.AsyncClient(timeout=5) as client:
-                response = await client.get(f"{self.base_url}/api/tags")
+                response = await client.get(f"{self.ollama_base_url}/api/tags")
                 return response.status_code == 200
         except Exception:
             return False

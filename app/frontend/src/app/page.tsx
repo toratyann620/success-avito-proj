@@ -933,9 +933,19 @@ function SettingsModal({ onClose }: { onClose: () => void }) {
                 onChange={(e) => setSelectedModel(e.target.value)}
               >
                 {availableModels.map((m) => (
-                  <option key={m} value={m}>{m}</option>
+                  <option key={m} value={m}>{m.startsWith("claude-") ? `☁️ ${m}（外部API）` : m}</option>
                 ))}
               </select>
+              {selectedModel.startsWith("claude-") && (
+                <div style={{
+                  fontSize: 11.5, color: "#ea4335", background: "rgba(234,67,53,0.08)",
+                  border: "1px solid rgba(234,67,53,0.25)", borderRadius: 8, padding: "8px 10px",
+                  lineHeight: 1.5,
+                }}>
+                  ⚠️ このモデルを選択すると、チャット内容・参照資料がAnthropicのクラウドAPIへ送信されます。
+                  本システムの「完全ローカル・閉域網動作」の前提から外れるため、機密情報の取り扱いに注意してください。
+                </div>
+              )}
               <button
                 className="panel-action-btn primary"
                 disabled={!selectedModel || selectedModel === currentModel || modelSwitching}

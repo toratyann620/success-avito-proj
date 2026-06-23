@@ -11,6 +11,9 @@ llama-index-vector-stores-chroma==0.2.1
 chromadb==0.5.15
 sentence-transformers==3.0.1
 
+# Claude API（設定画面でclaude-*モデルを選択した場合のみ使用。完全ローカル要件のオプトイン例外）
+anthropic>=0.40.0
+
 # 全文検索
 # SQLite FTS5 は Python 標準ライブラリに含まれる
 

@@ -181,7 +181,9 @@ OLLAMA_REMOTE_TIMEOUT=300
 ### ⚠️ リソース制約
 - **RAM 8GB / CPUのみ** の環境を想定。`gemma3:12b` や `gemma3:4b` は OOM クラッシュのため使用不可。
 - 現在の動作モデルは `qwen2.5-coder:1.5b`（約986MB）。
-- Ollama の payload options に `"num_predict": 150` を付与し、無限トークン生成ループを防止している。
+- Ollama の payload options に `num_predict` を付与し、無限トークン生成ループを防止している（用途別に値を分離。ローカル/外部Ollama共通）:
+  - チャット回答（`_chat_ollama` / `_chat_ollama_with_url` / `chat_stream`）: `num_predict: 1024`
+  - JSON抽出・提案チップ生成（`_generate_ollama` / `_generate_ollama_with_url`）: `num_predict: 200`
 
 ### 🗂️ チャットと出力（ファイル生成）の分離
 - `/api/chat/` は会話（テキスト回答 + citations）のみを担当する。ファイル生成トリガーは持たない。

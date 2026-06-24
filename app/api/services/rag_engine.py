@@ -142,9 +142,16 @@ class RAGEngine:
             conn.close()
 
     def build_context(self, results: list[SearchResult]) -> tuple[str, list[dict]]:
-        """検索結果からLLMへ渡すコンテキストを構築する"""
+        """検索結果からLLMへ渡すコンテキストを構築する
+
+        ベクトル検索は1ファイルを複数チャンクに分割してインデックス化しているため、
+        同一ファイルから複数チャンクがヒットすることがある。コンテキスト本文には
+        精度維持のため全チャンクを含めるが、出典リスト(sources)には同一file_nameを
+        1回のみ追加し、UIの出典チップが重複表示されないようにする。
+        """
         context_parts = []
         sources = []
+        seen_files = set()  # 出典の重複排除用
         total_chars = 0
 
         for i, result in enumerate(results):
@@ -153,13 +160,17 @@ class RAGEngine:
                 break
             context_parts.append(chunk)
             total_chars += len(chunk)
-            sources.append({
-                "index": i + 1,
-                "file_name": result.file_name,
-                "file_path": result.file_path,
-                "snippet": result.snippet,
-                "score": result.score,
-            })
+
+            # 同一ファイルは出典に1回のみ追加
+            if result.file_name not in seen_files:
+                seen_files.add(result.file_name)
+                sources.append({
+                    "index": len(sources) + 1,
+                    "file_name": result.file_name,
+                    "file_path": result.file_path,
+                    "snippet": result.snippet,
+                    "score": result.score,
+                })
 
         return "\n---\n".join(context_parts), sources
 

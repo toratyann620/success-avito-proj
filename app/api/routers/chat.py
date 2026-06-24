@@ -8,6 +8,7 @@ from pydantic import BaseModel
 from loguru import logger
 import json
 import os
+import re
 import sqlite3
 import uuid
 
@@ -110,6 +111,64 @@ async def chat(request: ChatRequest):
     except Exception as e:
         logger.error(f"チャットエラー: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+class SuggestionRequest(BaseModel):
+    last_user_message: str
+    last_ai_response: str
+    session_id: str
+
+
+SUGGESTION_PROMPT = """以下のAIアシスタントとの会話を踏まえて、
+ユーザーが次に送るべき質問や指示を3件提案してください。
+
+JSON配列のみで回答してください。説明不要。
+ユーザーの質問: {last_user_message}
+
+AIの回答: {last_ai_response}
+回答形式: ["提案1", "提案2", "提案3"]
+"""
+
+
+def _fallback_suggestions(last_ai_response: str) -> list[str]:
+    """LLMでの提案生成に失敗した場合の、回答内容に応じた固定フォールバック"""
+    if any(k in last_ai_response for k in ("分析", "損益", "売上")):
+        return ["詳細を教えてください", "Wordファイルにまとめて", "グラフ化できる項目は？"]
+    if any(k in last_ai_response for k in ("見積", "金額")):
+        return ["Excelで出力して", "宛名を修正して", "消費税を内税に変更して"]
+    return ["もっと詳しく教えて", "Wordファイルにまとめて", "別の視点から分析して"]
+
+
+@router.post("/suggestions")
+async def get_suggestions(request: SuggestionRequest):
+    """直前のAI回答をもとに、次のプロンプト候補を3件生成する"""
+    from services.llm_client import llm_client
+
+    prompt = SUGGESTION_PROMPT.format(
+        last_user_message=request.last_user_message[:500],
+        last_ai_response=request.last_ai_response[:1000],
+    )
+
+    suggestions = None
+    try:
+        raw = await llm_client.generate(prompt)
+        # LLMがコードブロックや前置きを付けて返すことがあるため、JSON配列部分のみ抽出
+        match = re.search(r"\[.*\]", raw, re.DOTALL)
+        if not match:
+            raise ValueError("JSON配列が見つかりません")
+        parsed = json.loads(match.group())
+        if not isinstance(parsed, list):
+            raise ValueError("JSON配列ではありません")
+        cleaned = [s.strip() for s in parsed if isinstance(s, str) and s.strip()]
+        if cleaned:
+            suggestions = cleaned[:3]
+    except Exception as e:
+        logger.warning(f"提案プロンプト生成に失敗、フォールバックを使用します: {e}")
+
+    if not suggestions:
+        suggestions = _fallback_suggestions(request.last_ai_response)
+
+    return {"suggestions": suggestions}
 
 
 @router.post("/stream")

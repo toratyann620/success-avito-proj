@@ -325,59 +325,12 @@ function CitationChips({ citations }: { citations: NonNullable<Message["citation
   );
 }
 
-/* -------- 次のプロンプト提案チップ -------- */
-function getSuggestedPrompts(lastAiMessage: string): string[] {
-  const msg = lastAiMessage;
-
-  // 見積書関連
-  if (msg.includes("見積") || msg.includes("単価") || msg.includes("金額")) {
-    return [
-      "宛名と有効期限を修正して",
-      "この内容でExcelファイルを出力して",
-      "消費税を内税に変更して",
-    ];
-  }
-
-  // 管理資料・分析関連
-  if (msg.includes("売上") || msg.includes("分析") || msg.includes("予測")) {
-    return [
-      "この内容をWordでまとめて",
-      "グラフ化できる項目を教えて",
-      "改善アクションを具体的に提案して",
-    ];
-  }
-
-  // NL2SQL・DB照会関連
-  if (msg.includes("SELECT") || msg.includes("集計") || msg.includes("顧客")) {
-    return [
-      "前月と比較してください",
-      "この結果をExcelで出力して",
-      "上位5件に絞り込んで",
-    ];
-  }
-
-  // 提案書・報告書関連
-  if (msg.includes("提案") || msg.includes("課題") || msg.includes("報告")) {
-    return [
-      "PowerPointスライドにまとめて",
-      "要点を3行で要約して",
-      "Wordファイルとして出力して",
-    ];
-  }
-
-  // デフォルト
-  return [
-    "この内容を詳しく教えて",
-    "Wordファイルにまとめて",
-    "別の視点から分析して",
-  ];
-}
-
-function SuggestionChips({ content, onSuggestClick }: { content: string; onSuggestClick: (text: string) => void }) {
-  const prompts = getSuggestedPrompts(content);
+/* -------- 次のプロンプト提案チップ（AIが動的生成、/api/chat/suggestions） -------- */
+function SuggestionChips({ suggestions, onSuggestClick }: { suggestions: string[]; onSuggestClick: (text: string) => void }) {
+  if (suggestions.length === 0) return null;
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 16 }}>
-      {prompts.map((prompt, i) => (
+      {suggestions.map((prompt, i) => (
         <button
           key={i}
           className="suggestion-chip"
@@ -456,12 +409,14 @@ function MessageActions({
 export function MessageBubble({
   message,
   isLatestAssistant,
+  suggestions,
   onSaveMemo,
   onFeedback,
   onSuggestClick,
 }: {
   message: Message;
   isLatestAssistant?: boolean;
+  suggestions?: string[];
   onSaveMemo?: (content: string) => void;
   onFeedback?: (id: string, value: "up" | "down") => void;
   onSuggestClick?: (text: string) => void;
@@ -531,9 +486,9 @@ export function MessageBubble({
           <MessageActions message={message} onSaveMemo={onSaveMemo} onFeedback={onFeedback} />
         )}
 
-        {/* 次のプロンプト提案チップ（最新のAI応答のみ） */}
-        {!message.isRestricted && isLatestAssistant && onSuggestClick && (
-          <SuggestionChips content={message.content} onSuggestClick={onSuggestClick} />
+        {/* 次のプロンプト提案チップ（最新のAI応答のみ、AIが動的生成） */}
+        {!message.isRestricted && isLatestAssistant && onSuggestClick && suggestions && suggestions.length > 0 && (
+          <SuggestionChips suggestions={suggestions} onSuggestClick={onSuggestClick} />
         )}
       </div>
     </motion.div>

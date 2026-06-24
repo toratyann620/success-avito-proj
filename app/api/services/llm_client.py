@@ -136,6 +136,7 @@ class LLMClient:
             "model": self.model,
             "messages": messages,
             "stream": False,
+            "options": {"num_predict": 1024},  # チャット回答用。無限生成ループ防止の安全装置
         }
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
@@ -182,6 +183,7 @@ class LLMClient:
             "model": _model,
             "messages": messages,
             "stream": False,
+            "options": {"num_predict": 1024},  # チャット回答用（ローカル/外部Ollama共通）。無限生成ループ防止
         }
         headers = {}
         if self._is_remote_ollama():
@@ -241,6 +243,7 @@ class LLMClient:
             "model": self.model,
             "messages": messages,
             "stream": True,
+            "options": {"num_predict": 1024},  # チャット回答用。無限生成ループ防止の安全装置
         }
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
@@ -285,6 +288,7 @@ class LLMClient:
             "model": self.model,
             "prompt": prompt,
             "stream": False,
+            "options": {"num_predict": 200},  # JSON抽出・提案チップ生成用。無限生成ループ防止の安全装置
         }
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
@@ -317,6 +321,7 @@ class LLMClient:
             "model": _model,
             "prompt": prompt,
             "stream": False,
+            "options": {"num_predict": 200},  # JSON抽出・提案チップ生成用（ローカル/外部Ollama共通）
         }
         headers = {}
         if self._is_remote_ollama():

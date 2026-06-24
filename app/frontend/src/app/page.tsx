@@ -268,10 +268,12 @@ function ChatInputBar({
   useEffect(() => { adjustHeight(); }, [value]);
 
   const handleKey = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && !e.shiftKey) {
+    if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+      // Ctrl+Enter（Windows/Linux）または Cmd+Enter（Mac）で送信
       e.preventDefault();
       onSend();
     }
+    // それ以外のEnterは通常の改行として扱う（デフォルト動作）
   };
 
   const handleMic = () => {
@@ -296,7 +298,7 @@ function ChatInputBar({
             value={value}
             onChange={(e) => onChange(e.target.value)}
             onKeyDown={handleKey}
-            placeholder={attachedFile ? "PDFについて質問する（空欄でも分析を開始します）" : "AVITO（アビト）に質問する"}
+            placeholder={attachedFile ? "PDFについて質問する（空欄でも分析を開始します）" : "AVITO（アビト）に質問する（Ctrl+Enter または Cmd+Enter で送信）"}
             rows={1}
             style={{
               width: "100%",
@@ -1326,6 +1328,7 @@ export default function Page() {
   const [demoMode, setDemoMode] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [thinkingLabel, setThinkingLabel] = useState("");
+  const [suggestions, setSuggestions] = useState<string[]>([]);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [attachedFile, setAttachedFile] = useState<File | null>(null);
   const [sessionId, setSessionId] = useState(() => Date.now().toString());
@@ -1498,6 +1501,25 @@ export default function Page() {
     setMessages((prev) => prev.map((m) => (m.id === id ? { ...m, feedback: m.feedback === value ? undefined : value } : m)));
   }, []);
 
+  // AI応答受信後、次のプロンプト候補をバックグラウンドで取得する（awaitしない・UXを止めない）。
+  // 失敗時や応答が遅い間は、直前の suggestions をそのまま表示し続ける（ちらつき防止）。
+  const fetchSuggestions = useCallback((lastUserMessage: string, lastAiResponse: string) => {
+    fetch(`${API_BASE}/api/chat/suggestions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        last_user_message: lastUserMessage,
+        last_ai_response: lastAiResponse,
+        session_id: sessionId,
+      }),
+    })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data?.suggestions?.length) setSuggestions(data.suggestions);
+      })
+      .catch((e) => console.error("提案プロンプト取得エラー:", e));
+  }, [sessionId]);
+
   const handleSend = useCallback(async (text?: string) => {
     const content = (text ?? input).trim();
     const hasPdf = !!attachedFile;
@@ -1572,6 +1594,7 @@ export default function Page() {
       setThinkingLabel("");
 
       setMessages((p) => [...p, { id: (Date.now() + 1).toString(), role: "assistant", timestamp: new Date(), ...res }]);
+      fetchSuggestions(content, res.content);
       setGenerating(false);
       return;
     }
@@ -1716,6 +1739,7 @@ export default function Page() {
           timestamp: new Date(),
         },
       ]);
+      fetchSuggestions(content, data.answer);
 
     } catch (e) {
       console.error(e);
@@ -1732,7 +1756,7 @@ export default function Page() {
 
     setThinkingLabel("");
     setGenerating(false);
-  }, [input, generating, role, attachedFile, demoMode, sessionId, sources]);
+  }, [input, generating, role, attachedFile, demoMode, sessionId, sources, fetchSuggestions]);
 
   const handleNewChat = () => {
     setMessages([]);
@@ -1806,6 +1830,7 @@ export default function Page() {
                       key={msg.id}
                       message={msg}
                       isLatestAssistant={msg.id === lastAssistantId}
+                      suggestions={suggestions}
                       onSaveMemo={handleSaveMessageToMemo}
                       onFeedback={handleFeedback}
                       onSuggestClick={setInput}

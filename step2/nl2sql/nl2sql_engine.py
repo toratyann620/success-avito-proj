@@ -61,9 +61,11 @@ class NL2SQLEngine:
         """ユーザーの自然言語質問からSQLを自動生成する (ローカルLLM / OLLAMA_MODEL)"""
         logger.info(f"NL2SQL生成開始: {user_query}")
         
-        # 業務カタログからスキーマコンテキストを取得
-        catalog_context = catalog_manager.get_all_prompt_context()
-        
+        # 業務カタログから、質問に関連するテーブルのみに絞ったスキーマコンテキストを取得
+        # （catalog.yaml全体を毎回埋め込むとプロンプトが肥大化し、軽量モデルで遅延・タイムアウトするため）
+        catalog_context = catalog_manager.get_relevant_prompt_context(user_query)
+        logger.info(f"カタログコンテキスト文字数: {len(catalog_context)}")
+
         system_prompt = f"""あなたはリレーショナルデータベース（SQLite）のSQLクエリ作成の専門家です。
 ユーザーの自然言語によるデータ分析やレポート作成の要求を、適切なSQLクエリ（SELECT文）に変換してください。
 
@@ -74,12 +76,9 @@ class NL2SQLEngine:
 {catalog_context}
 
 【制約事項】
-1. 作成するSQLは必ず 'SELECT' または 'WITH' で始まる読み取り専用クエリにしてください。
-2. テーブル結合（JOIN）を行う場合は、カタログで定義された結合キーのガイドラインに必ず従ってください。
-3. 日付の比較を行う場合、SQLiteの 'DATE' 型は文字列比較として扱える形式（'YYYY-MM-DD'）であることを考慮してください。
-4. 計算式やKPI指標は、カタログに定義された計算例に従ってください。
-5. 生成するSQLは1つのみとし、セミコロン ';' を付与してクエリを終了させてください。
-6. 返答には解説を一切含めず、```sql ... ``` で囲まれたSQLコードブロックのみを出力してください。
+1. 必ず 'SELECT' または 'WITH' で始まる読み取り専用クエリを1つだけ作成し、末尾に ';' を付けてください。
+2. テーブル結合・計算式は、カタログで定義されたJOIN条件・KPI計算例に従ってください。
+3. 返答には解説を一切含めず、```sql ... ``` で囲まれたSQLコードブロックのみを出力してください。
 """
 
         payload = {
